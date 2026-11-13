@@ -217,14 +217,14 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
     }
     // A state alone is given more room above it: its towers are taller on
     // screen than the country's.
-    const view = viewFor(bounds, el.clientWidth, el.clientHeight, PITCH, focus ? 0.6 : 0.68, focus ? 0.42 : 0.5)
+    const view = viewFor(bounds, el.clientWidth, el.clientHeight, PITCH, focus ? 0.6 : 0.64, focus ? 0.42 : 0.5)
     if (focus)
       return view
     // The country is looked at a little north-west of its middle, which sets
     // it down and right on screen: the totals sit over its north-west corner,
     // where the tallest towers on the Pacific would otherwise stand behind them.
     // A wide window leaves room at both sides, and there it stays in the middle.
-    const east = el.clientWidth / el.clientHeight > 1.75 ? 0.02 : -0.02
+    const east = el.clientWidth / el.clientHeight > 1.75 ? 0.02 : -0.035
     return { center: [view.center[0] + (bounds[3] - bounds[1]) * 0.05, view.center[1] + (bounds[2] - bounds[0]) * east], zoom: view.zoom }
   }
   const start = home()

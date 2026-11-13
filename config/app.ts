@@ -1,5 +1,6 @@
 import type { AppConfig } from '@stacksjs/types'
 import { env } from '@stacksjs/env'
+import { STATES } from '../resources/data/states'
 
 /**
  * **Application Configuration**
@@ -37,8 +38,9 @@ export default {
   // put in public/ wins over the generated one.
   seo: {
     sitemap: {
-      // Concrete URLs for dynamic routes, e.g. '/products/blue-mug'.
-      include: [],
+      // A page for each state and D.C., which the sitemap cannot find on its
+      // own because they are one dynamic route.
+      include: STATES.map(state => `/state/${state.code}`),
       exclude: [],
     },
     robots: {
