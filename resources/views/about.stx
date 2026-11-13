@@ -1,0 +1,305 @@
+@extends('default')
+@section('content')
+<script server>
+/**
+ * What the map shows and how to read it: the two things a reader cannot work
+ * out by looking, which are what a height stands for and where the numbers
+ * are from.
+ */
+const pageTitle = 'About the map'
+const pageDescription = 'How to read Votescape: what the heights and colours mean, how counties are counted, and where the 2026 midterm results come from.'
+const canonicalPath = '/about'
+</script>
+
+<div class="va-page">
+  <header class="va-top">
+    <a class="va-brand" href="/" aria-label="Votescape, back to the map">
+      <svg viewBox="0 0 48 48" width="26" height="26" fill="none" aria-hidden="true">
+        <rect x="6" y="22" width="9" height="20" rx="2" fill="#5b9dff" />
+        <rect x="19.5" y="6" width="9" height="36" rx="2" fill="#e8dce4" />
+        <rect x="33" y="15" width="9" height="27" rx="2" fill="#ff6f66" />
+      </svg>
+      <span>Votescape</span>
+    </a>
+    <a class="va-back" href="/">Open the map</a>
+  </header>
+
+  <article class="va-article">
+    <p class="va-eyebrow">About</p>
+    <h1>Land does not vote. People do.</h1>
+    <p class="va-lede">A flat election map is mostly empty country. Votescape stands every county up as a tower, as tall as the votes cast there, so the places where most people live are the places you see.</p>
+
+    <div class="va-grid">
+      <section>
+        <h2>Height</h2>
+        <p>A tower's height is the number of votes cast in that county for the office shown. Los Angeles County towers over the map because close to three million people voted there.</p>
+        <p>Switch height to votes per square mile to compare places by how closely packed their voters are. That view uses a square-root scale, or Manhattan alone would be all you could see. The labels always give the real figure.</p>
+      </section>
+
+      <section>
+        <h2>Colour</h2>
+        <p>Colour is the margin between the Democrat and the Republican, as a share of the votes for the two of them. Deep blue and deep red are leads of fifty points or more. The pale middle is a close race.</p>
+        <div class="va-scale" role="img" aria-label="Colour scale from a Republican lead of 50 points, through even, to a Democratic lead of 50 points"></div>
+        <div class="va-scale-ends"><span>R+50</span><span>Even</span><span>D+50</span></div>
+        <p>Grey towers are places where votes were cast, but not between a Democrat and a Republican, so there is no margin to show. Flat ground is a place with no race for that office.</p>
+      </section>
+    </div>
+
+    <section>
+      <h2>The four views</h2>
+      <dl class="va-list">
+        <div>
+          <dt>House</dt>
+          <dd>The only office on every ballot in the country. Where a county is split between districts, its districts are added together.</dd>
+        </div>
+        <div>
+          <dt>Senate</dt>
+          <dd>The 35 states with a Senate race, including the special elections. The rest lie flat.</dd>
+        </div>
+        <div>
+          <dt>Governor</dt>
+          <dd>The 36 states that chose a governor.</dd>
+        </div>
+        <div>
+          <dt>Top of ticket</dt>
+          <dd>Each state by its most prominent race: Senate where there was one, otherwise governor, otherwise the House.</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section>
+      <h2>How places are counted</h2>
+      <ul class="va-notes">
+        <li><b>Alaska</b> is drawn by its 40 state house districts, which is how its results are reported. Its boroughs are not.</li>
+        <li><b>Connecticut</b> is drawn by its nine planning regions, which replaced its counties. Town results are added up into them.</li>
+        <li><b>Uncontested and one-party races.</b> Where most of a county's House votes were cast in a district without both a Democrat and a Republican, the county is grey.</li>
+        <li><b>A missing major party.</b> In a statewide race with no Democrat or no Republican, the leading candidate against the other party takes that side, and is named.</li>
+        <li><b>Ranked-choice voting</b> in Alaska and Maine is shown by first choices.</li>
+        <li><b>Louisiana</b> voted in all-party primaries. Each side is its party's total.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>The numbers</h2>
+      <p>These are unofficial results, and they will change. Some races are not called, a few go to runoffs, and no state has certified its count. The map says when its numbers were last updated, in the legend.</p>
+      <p>The shapes are the U.S. Census Bureau's 2024 cartographic boundary files, laid out in the Albers USA projection, with Alaska and Hawaii moved and resized to fit.</p>
+    </section>
+
+    <section>
+      <h2>How it is made</h2>
+      <p>The map is drawn in your browser by <a href="https://github.com/stacksjs/ts-maps">ts-maps</a>, an open source mapping library, as 3,154 extruded shapes over a single layer of data. The site is built with <a href="https://stacksjs.com">Stacks</a>.</p>
+    </section>
+
+    <p class="va-cta"><a class="va-button" href="/">Open the map</a></p>
+  </article>
+</div>
+
+<style>
+.va-page {
+  min-height: 100vh;
+  color: #e9edf5;
+  background: radial-gradient(1200px 600px at 50% -10%, #17203a 0%, #0b0f17 60%);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.va-page *,
+.va-page *::before,
+.va-page *::after {
+  box-sizing: border-box;
+}
+
+.va-page :focus-visible {
+  outline: 2px solid #8ab4ff;
+  outline-offset: 2px;
+}
+
+.va-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 16px 20px;
+}
+
+.va-brand {
+  display: inline-flex;
+  gap: 9px;
+  align-items: center;
+  color: #e9edf5;
+  font-weight: 650;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.va-back {
+  padding: 7px 12px;
+  color: #e9edf5;
+  font-weight: 550;
+  font-size: 13px;
+  text-decoration: none;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+}
+
+.va-back:hover {
+  border-color: rgba(148, 163, 184, 0.45);
+}
+
+.va-article {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 48px 20px 96px;
+}
+
+.va-eyebrow {
+  margin: 0;
+  color: #9aa5b8;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.va-article h1 {
+  max-width: 16ch;
+  margin: 10px 0 0;
+  font-weight: 700;
+  font-size: clamp(34px, 6vw, 56px);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.va-lede {
+  max-width: 60ch;
+  margin: 20px 0 0;
+  color: #c6cedb;
+  font-size: clamp(17px, 2.2vw, 20px);
+  line-height: 1.55;
+}
+
+.va-article section {
+  margin-top: 48px;
+}
+
+.va-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin-top: 48px;
+}
+
+.va-grid section {
+  margin-top: 0;
+  padding: 22px;
+  background: rgba(14, 19, 30, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+}
+
+.va-article h2 {
+  margin: 0 0 10px;
+  font-weight: 650;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.va-article p {
+  max-width: 68ch;
+  margin: 0 0 12px;
+  color: #c6cedb;
+}
+
+.va-article a {
+  color: #8ab4ff;
+  text-underline-offset: 3px;
+}
+
+.va-scale {
+  height: 10px;
+  margin: 16px 0 5px;
+  background: linear-gradient(90deg, #a50f15 0%, #de2d26 25%, #fb9a8a 42%, #e8dce4 50%, #9ab8ef 58%, #3b82f6 75%, #1e40af 100%);
+  border-radius: 999px;
+}
+
+.va-scale-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  color: #9aa5b8;
+  font-size: 12px;
+}
+
+.va-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.va-list > div {
+  display: grid;
+  gap: 4px 24px;
+  grid-template-columns: 150px 1fr;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.va-list dt {
+  font-weight: 650;
+}
+
+.va-list dd {
+  margin: 0;
+  color: #c6cedb;
+}
+
+.va-notes {
+  display: grid;
+  gap: 10px;
+  max-width: 72ch;
+  margin: 0;
+  padding: 0;
+  color: #c6cedb;
+  list-style: none;
+}
+
+.va-notes li {
+  padding-left: 16px;
+  border-left: 2px solid rgba(148, 163, 184, 0.3);
+}
+
+.va-notes b {
+  color: #e9edf5;
+  font-weight: 650;
+}
+
+.va-cta {
+  margin-top: 56px;
+}
+
+.va-article a.va-button {
+  display: inline-block;
+  padding: 12px 20px;
+  color: #0b0f17;
+  font-weight: 650;
+  text-decoration: none;
+  background: #f1f4f9;
+  border-radius: 12px;
+}
+
+.va-article a.va-button:hover {
+  background: #fff;
+}
+
+@media (max-width: 560px) {
+  .va-list > div {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+@endsection

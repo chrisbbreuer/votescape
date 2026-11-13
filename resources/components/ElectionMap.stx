@@ -1,10 +1,13 @@
 {{-- The map and everything laid over it: which office is shown, the totals,
-  the county under the pointer, the legend, and the links to each state.
+  the county under the pointer, the legend, and the way to each state.
 
   Used by the home page for the whole country and by a state's page for one
   state, which passes that state's postal code as focus. The map itself is
   drawn by resources/composables/useElectionMap.ts into the element marked
-  data-stx-ignore, which stx leaves alone. --}}
+  data-stx-ignore, which stx leaves alone.
+
+  On a wide screen the panels sit in the corners around the map. On a phone
+  they stack: what is shown above the map, the place and the legend below. --}}
 <script server>
 import { stateByCode, STATES } from '~/resources/data/states'
 
@@ -12,6 +15,7 @@ export const focus = String($props.focus || '').toLowerCase()
 export const focusState = stateByCode(focus)
 export const focusName = focusState ? focusState.name : ''
 export const stateLinks = STATES
+export const heading = focusName ? `${focusName} in the 2026 midterms, county by county` : 'The 2026 midterms, county by county'
 </script>
 
 <script client>
@@ -26,6 +30,8 @@ const hovered = state<CountyInfo | null>(null)
 const selected = state<CountyInfo | null>(null)
 const totals = state<Summary | null>(null)
 const loaded = state(false)
+const failed = state(false)
+const explored = state(false)
 const hasResults = state(true)
 const hasWebgl = state(true)
 const official = state(false)
@@ -35,34 +41,73 @@ const sourceLabel = state('')
 let handle: ElectionMapHandle | null = null
 let cancel: (() => void) | null = null
 
+/** A side's share of the two-party vote, as a percentage. */
+function share(side: number, other: number): number {
+  return side + other > 0 ? (side / (side + other)) * 100 : 0
+}
+
+function percent(value: number): string {
+  return `${value.toFixed(1)}%`
+}
+
 // The county shown in the card: the one under the pointer, else the one clicked.
 const county = derived(() => hovered() ?? selected())
+const countyPinned = derived(() => !!selected() && (!hovered() || hovered()?.id === selected()?.id))
 const countyName = derived(() => county()?.name ?? '')
 const countyState = derived(() => county()?.state ?? '')
 const countyLink = derived(() => `/state/${county()?.code ?? ''}`)
 const countyOffice = derived(() => county()?.office ?? '')
 const countyHasRace = derived(() => county()?.hasRace ?? false)
-const countyDem = derived(() => `${county()?.demName ?? ''}: ${formatNumber(county()?.dem ?? 0)}`)
-const countyRep = derived(() => `${county()?.repName ?? ''}: ${formatNumber(county()?.rep ?? 0)}`)
-const countyTotal = derived(() => `${formatNumber(county()?.total ?? 0)} votes`)
+const countyDemName = derived(() => county()?.demName ?? '')
+const countyRepName = derived(() => county()?.repName ?? '')
+const countyDem = derived(() => formatNumber(county()?.dem ?? 0))
+const countyRep = derived(() => formatNumber(county()?.rep ?? 0))
+const countyDemShare = derived(() => share(county()?.dem ?? 0, county()?.rep ?? 0))
+const countyDemPercent = derived(() => percent(countyDemShare()))
+const countyRepPercent = derived(() => percent(share(county()?.rep ?? 0, county()?.dem ?? 0)))
+const countyDemBar = derived(() => `width:${countyDemShare()}%`)
+const countyHasSides = derived(() => (county()?.dem ?? 0) + (county()?.rep ?? 0) > 0)
+const countyTotal = derived(() => `${formatNumber(county()?.total ?? 0)} votes cast`)
 const countyMargin = derived(() => formatMargin(county()?.margin))
 const countyLeansDem = derived(() => (county()?.margin ?? 0) > 0)
-const countyCounted = derived(() => (county()?.pct === null || county()?.pct === undefined ? '' : `${county()?.pct}% of expected vote counted`))
+const countyCounted = derived(() => (county()?.pct === null || county()?.pct === undefined ? '' : `${county()?.pct}% of the expected vote counted`))
 const countyNotes = derived(() => (county()?.notes ?? []).join(' '))
 
 const totalsTitle = derived(() => totals()?.title ?? '')
 const totalsOffice = derived(() => totals()?.office ?? '')
 const totalsHasRace = derived(() => totals()?.hasRace ?? false)
-const totalsDem = derived(() => `${totals()?.demName ?? ''}: ${formatNumber(totals()?.dem ?? 0)}`)
-const totalsRep = derived(() => `${totals()?.repName ?? ''}: ${formatNumber(totals()?.rep ?? 0)}`)
-const totalsVotes = derived(() => `${formatNumber(totals()?.total ?? 0)} votes`)
+const totalsDemName = derived(() => totals()?.demName ?? '')
+const totalsRepName = derived(() => totals()?.repName ?? '')
+const totalsDem = derived(() => formatNumber(totals()?.dem ?? 0))
+const totalsRep = derived(() => formatNumber(totals()?.rep ?? 0))
+const totalsDemShare = derived(() => share(totals()?.dem ?? 0, totals()?.rep ?? 0))
+const totalsDemPercent = derived(() => percent(totalsDemShare()))
+const totalsRepPercent = derived(() => percent(share(totals()?.rep ?? 0, totals()?.dem ?? 0)))
+const totalsDemBar = derived(() => `width:${totalsDemShare()}%`)
+const totalsVotes = derived(() => `${formatNumber(totals()?.total ?? 0)} votes cast`)
 const totalsMargin = derived(() => formatMargin(totals()?.margin))
 const totalsLeansDem = derived(() => (totals()?.margin ?? 0) > 0)
 const totalsStatus = derived(() => totals()?.status ?? '')
 const totalsNotes = derived(() => (totals()?.notes ?? []).join(' '))
-const sourceLine = derived(() => `${official() ? 'Certified results' : 'Unofficial results'}${updated() ? `, updated ${updated()}` : ''}${sourceLabel() ? `. Source: ${sourceLabel()}` : ''}`)
 
-const heightNote = derived(() => (metric() === 'density' ? 'Height is votes per square mile, on a square-root scale.' : 'Height is votes cast.'))
+// House seats, as a bar: won by each party, with what is not called between them.
+const seats = derived(() => totals()?.seats ?? null)
+const seatCount = derived(() => (seats()?.dem ?? 0) + (seats()?.rep ?? 0) + (seats()?.open ?? 0))
+const hasSeats = derived(() => seatCount() > 0)
+const seatsDem = derived(() => String(seats()?.dem ?? 0))
+const seatsRep = derived(() => String(seats()?.rep ?? 0))
+const seatsDemBar = derived(() => `width:${seatCount() > 0 ? ((seats()?.dem ?? 0) / seatCount()) * 100 : 0}%`)
+const seatsRepBar = derived(() => `width:${seatCount() > 0 ? ((seats()?.rep ?? 0) / seatCount()) * 100 : 0}%`)
+const seatsNote = derived(() => {
+  const open = seats()?.open ?? 0
+  const majority = Math.floor(seatCount() / 2) + 1
+  const called = open > 0 ? `${open} not called. ` : ''
+  return seatCount() > 1 ? `${called}${majority} of ${seatCount()} seats is a majority.` : called.trim()
+})
+
+const sourceBadge = derived(() => (official() ? 'Certified' : 'Unofficial'))
+const sourceLine = derived(() => (updated() ? `Updated ${updated()}` : ''))
+const sourceCredit = derived(() => (sourceLabel() ? `Source: ${sourceLabel()}` : ''))
 
 function chooseOffice(next: OfficeKey): void {
   office.set(next)
@@ -81,6 +126,26 @@ function resetView(): void {
   handle?.resetView()
 }
 
+function zoomIn(): void {
+  handle?.zoom(1)
+}
+
+function zoomOut(): void {
+  handle?.zoom(-1)
+}
+
+function turnLeft(): void {
+  handle?.turn(-30)
+}
+
+function turnRight(): void {
+  handle?.turn(30)
+}
+
+function unpin(): void {
+  handle?.clearSelection()
+}
+
 async function mount(): Promise<void> {
   const view = readView()
   office.set(view.office)
@@ -90,6 +155,7 @@ async function mount(): Promise<void> {
     metric: view.metric,
     onHover: info => hovered.set(info),
     onSelect: info => selected.set(info),
+    onExplore: () => explored.set(true),
     onReady: ({ meta, webgl }) => {
       hasResults.set(!!meta)
       hasWebgl.set(webgl)
@@ -98,6 +164,7 @@ async function mount(): Promise<void> {
       updated.set(meta?.updatedAt ? new Date(meta.updatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '')
     },
   })
+  failed.set(!handle)
   totals.set(handle?.summary() ?? null)
   loaded.set(true)
 }
@@ -113,109 +180,1131 @@ onDestroy(() => {
 })
 </script>
 
-<div class="overflow-hidden relative w-full text-white vs-stage">
-  <div id="election-map" data-stx-ignore data-focus="{{ focus }}" class="absolute inset-0"></div>
+<div class="vs-stage">
+  <h1 class="sr-only">{{ heading }}</h1>
 
-  {{-- Across the top: where you are, and what is shown. --}}
-  <header class="flex absolute inset-x-0 top-0 z-[1000] flex-wrap gap-3 items-start justify-between p-4 pointer-events-none">
-    <div class="pointer-events-auto">
+  <div id="election-map" data-stx-ignore data-focus="{{ focus }}" class="vs-map" role="application" aria-label="3D map of results by county. Drag to move, scroll to zoom."></div>
+
+  {{-- Over the map until it is drawn. --}}
+  <div class="vs-veil" :class="loaded() ? 'is-done' : ''" aria-hidden="true">
+    <svg class="vs-veil-mark" viewBox="0 0 48 48" width="48" height="48" fill="none">
+      <rect x="6" y="22" width="9" height="20" rx="2" fill="#5b9dff" />
+      <rect x="19.5" y="6" width="9" height="36" rx="2" fill="#e8dce4" />
+      <rect x="33" y="15" width="9" height="27" rx="2" fill="#ff6f66" />
+    </svg>
+    <p>Raising 3,154 counties</p>
+  </div>
+
+  {{-- Across the top: where you are, what is shown, and where else to go. --}}
+  <header class="vs-top">
+    <div class="vs-top-start">
+      <a class="vs-brand" href="/" aria-label="Votescape, the whole country">
+        <svg viewBox="0 0 48 48" width="26" height="26" fill="none" aria-hidden="true">
+          <rect x="6" y="22" width="9" height="20" rx="2" fill="#5b9dff" />
+          <rect x="19.5" y="6" width="9" height="36" rx="2" fill="#e8dce4" />
+          <rect x="33" y="15" width="9" height="27" rx="2" fill="#ff6f66" />
+        </svg>
+        <span>Votescape</span>
+      </a>
       @if(focusName)
-        <a href="/" class="text-neutral-400 text-sm hover:text-white">All states</a>
-        <h1 class="font-semibold text-2xl tracking-tight">{{ focusName }}</h1>
+        <a class="vs-crumb" href="/" aria-label="All states">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><path d="M10 3 5 8l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          <span>All states</span>
+        </a>
       @else
-        <h1 class="font-semibold text-2xl tracking-tight">Votescape</h1>
+        <span class="vs-tag">2026 midterms</span>
       @endif
-      <p class="text-neutral-400 text-sm">The 2026 midterms, county by county. {{ heightNote() }}</p>
     </div>
 
-    <div class="flex flex-col gap-2 items-end pointer-events-auto">
-      <div class="flex gap-1 p-1 bg-neutral-900/80 border border-neutral-700 rounded-lg" role="group" aria-label="Office">
-        <button type="button" class="px-3 py-1.5 font-medium text-sm rounded-md" :class="office() === 'house' ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:text-white'" :aria-pressed="office() === 'house' ? 'true' : 'false'" @click="chooseOffice('house')">U.S. House</button>
-        <button type="button" class="px-3 py-1.5 font-medium text-sm rounded-md" :class="office() === 'senate' ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:text-white'" :aria-pressed="office() === 'senate' ? 'true' : 'false'" @click="chooseOffice('senate')">Senate</button>
-        <button type="button" class="px-3 py-1.5 font-medium text-sm rounded-md" :class="office() === 'governor' ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:text-white'" :aria-pressed="office() === 'governor' ? 'true' : 'false'" @click="chooseOffice('governor')">Governor</button>
-        <button type="button" class="px-3 py-1.5 font-medium text-sm rounded-md" :class="office() === 'top' ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:text-white'" :aria-pressed="office() === 'top' ? 'true' : 'false'" @click="chooseOffice('top')">Top of ticket</button>
-      </div>
-      <div class="flex gap-2 items-center">
-        <div class="flex gap-1 p-1 bg-neutral-900/80 border border-neutral-700 rounded-lg" role="group" aria-label="Height">
-          <button type="button" class="px-2.5 py-1 text-xs rounded-md" :class="metric() === 'votes' ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:text-white'" :aria-pressed="metric() === 'votes' ? 'true' : 'false'" @click="chooseMetric('votes')">Total votes</button>
-          <button type="button" class="px-2.5 py-1 text-xs rounded-md" :class="metric() === 'density' ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:text-white'" :aria-pressed="metric() === 'density' ? 'true' : 'false'" @click="chooseMetric('density')">Votes per sq mi</button>
-        </div>
-        <button type="button" class="px-2.5 py-1.5 text-neutral-300 text-xs hover:text-white bg-neutral-900/80 border border-neutral-700 rounded-lg" @click="resetView()">Reset view</button>
-      </div>
+    <div class="vs-offices vs-seg" role="group" aria-label="Office">
+      <button type="button" :class="office() === 'house' ? 'is-on' : ''" :aria-pressed="office() === 'house' ? 'true' : 'false'" @click="chooseOffice('house')">House</button>
+      <button type="button" :class="office() === 'senate' ? 'is-on' : ''" :aria-pressed="office() === 'senate' ? 'true' : 'false'" @click="chooseOffice('senate')">Senate</button>
+      <button type="button" :class="office() === 'governor' ? 'is-on' : ''" :aria-pressed="office() === 'governor' ? 'true' : 'false'" @click="chooseOffice('governor')">Governor</button>
+      <button type="button" :class="office() === 'top' ? 'is-on' : ''" :aria-pressed="office() === 'top' ? 'true' : 'false'" @click="chooseOffice('top')">Top of ticket</button>
+    </div>
+
+    <div class="vs-top-end">
+      <button type="button" class="vs-btn" popovertarget="vs-states">
+        <span>States</span>
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      </button>
+      <a class="vs-btn vs-btn-quiet" href="/about">About</a>
     </div>
   </header>
 
-  {{-- Top left, under the title: the totals for what is shown. --}}
-  <section class="absolute left-4 top-28 z-[1000] p-4 max-w-[80vw] w-72 bg-neutral-900/85 border border-neutral-700 rounded-xl" :if="loaded() && hasResults()" aria-live="polite">
-    <p class="text-neutral-400 text-xs tracking-wide uppercase">{{ totalsOffice() }}</p>
-    <h2 class="font-semibold text-lg">{{ totalsTitle() }}</h2>
-    <div :if="totalsHasRace()">
-      <p class="mt-2 font-semibold text-2xl" :class="totalsLeansDem() ? 'text-blue-400' : 'text-red-400'">{{ totalsMargin() }}</p>
-      <p class="mt-2 text-blue-300 text-sm">{{ totalsDem() }}</p>
-      <p class="text-red-300 text-sm">{{ totalsRep() }}</p>
-      <p class="text-neutral-400 text-sm">{{ totalsVotes() }}</p>
-      <p class="mt-2 text-neutral-300 text-sm">{{ totalsStatus() }}</p>
-      <p class="mt-2 text-neutral-400 text-xs" :if="totalsNotes()">{{ totalsNotes() }}</p>
-    </div>
-    <p class="mt-2 text-neutral-400 text-sm" :if="!totalsHasRace()">This office was not on the ballot here in 2026.</p>
-  </section>
+  {{-- Every state, as links: a reader picks one, and a crawler finds them all. --}}
+  <nav id="vs-states" popover class="vs-states" aria-label="States">
+    <p class="vs-states-title">Go to a state</p>
+    <ul>
+      <li><a href="/" class="{{ focus ? '' : 'is-here' }}">United States</a></li>
+      @foreach(stateLinks as link)
+        <li><a href="/state/{{ link.code }}" class="{{ link.code === focus ? 'is-here' : '' }}">{{ link.name }}</a></li>
+      @endforeach
+    </ul>
+  </nav>
 
-  <section class="absolute left-4 top-28 z-[1000] p-4 max-w-[80vw] w-80 bg-neutral-900/85 border border-neutral-700 rounded-xl" :if="loaded() && !hasResults()">
-    <h2 class="font-semibold">No results yet</h2>
-    <p class="mt-2 text-neutral-300 text-sm">The map is drawn, but the results file has not been built. Run <code class="px-1 bg-neutral-800 rounded">bun run data:results</code> and reload.</p>
-  </section>
-
-  {{-- Bottom left: the county under the pointer, or the one clicked. --}}
-  <section class="absolute bottom-4 left-4 z-[1000] p-4 max-w-[80vw] w-80 bg-neutral-900/90 border border-neutral-700 rounded-xl" :if="county()" aria-live="polite">
-    <p class="text-neutral-400 text-xs tracking-wide uppercase">{{ countyOffice() }}</p>
-    <h2 class="font-semibold text-lg">{{ countyName() }}</h2>
-    <a class="text-neutral-400 text-sm underline underline-offset-2 hover:text-white" :href="countyLink()">{{ countyState() }}</a>
-    <div :if="countyHasRace()">
-      <p class="mt-2 font-semibold text-xl" :class="countyLeansDem() ? 'text-blue-400' : 'text-red-400'" :if="countyMargin()">{{ countyMargin() }}</p>
-      <p class="mt-2 text-blue-300 text-sm">{{ countyDem() }}</p>
-      <p class="text-red-300 text-sm">{{ countyRep() }}</p>
-      <p class="text-neutral-400 text-sm">{{ countyTotal() }}</p>
-      <p class="text-neutral-500 text-xs">{{ countyCounted() }}</p>
-      <p class="mt-2 text-neutral-400 text-xs" :if="countyNotes()">{{ countyNotes() }}</p>
-    </div>
-    <p class="mt-2 text-neutral-400 text-sm" :if="!countyHasRace()">No results here for this office.</p>
-  </section>
-
-  {{-- Bottom right: what the colours mean, where the numbers are from, and every state. --}}
-  <aside class="flex absolute bottom-4 right-4 z-[1000] flex-col gap-3 items-end max-w-[90vw]">
-    <details class="p-3 max-w-full w-80 text-sm bg-neutral-900/90 border border-neutral-700 rounded-xl">
-      <summary class="font-medium cursor-pointer">Go to a state</summary>
-      <ul class="grid overflow-y-auto gap-x-4 gap-y-1 grid-cols-2 mt-3 max-h-64">
-        @foreach(stateLinks as link)
-          <li><a class="text-neutral-300 hover:text-white hover:underline" href="/state/{{ link.code }}">{{ link.name }}</a></li>
-        @endforeach
-      </ul>
-    </details>
-
-    <div class="p-3 max-w-full w-80 bg-neutral-900/90 border border-neutral-700 rounded-xl">
-      <div class="h-2.5 rounded-full vs-legend" role="img" aria-label="Colour scale from a Republican lead of 50 points or more, through even, to a Democratic lead of 50 points or more"></div>
-      <div class="flex justify-between mt-1 text-neutral-400 text-xs">
-        <span>R+50</span>
-        <span>Even</span>
-        <span>D+50</span>
+  {{-- The totals for what is shown. --}}
+  <section class="vs-panel vs-totals" :if="loaded() && hasResults()" aria-live="polite">
+    <div class="vs-panel-head">
+      <div>
+        <p class="vs-eyebrow">{{ totalsOffice() }}</p>
+        <h2>{{ totalsTitle() }}</h2>
       </div>
-      <p class="mt-2 text-neutral-400 text-xs">Grey: votes were cast, but not between a Democrat and a Republican. Flat: no race.</p>
-      <p class="mt-2 text-neutral-500 text-xs" :if="loaded() && hasResults()">{{ sourceLine() }}</p>
-      <p class="mt-2 text-amber-300 text-xs" :if="loaded() && !hasWebgl()">This browser has no WebGL, so counties are drawn flat.</p>
+      <p class="vs-margin" :class="totalsLeansDem() ? 'is-dem' : 'is-rep'" :if="totalsHasRace() && totalsMargin()">{{ totalsMargin() }}</p>
     </div>
+
+    <div :if="totalsHasRace()">
+      <div class="vs-share" role="img" aria-label="Share of the two-party vote">
+        <span class="vs-share-dem" :style="totalsDemBar()"></span>
+      </div>
+      <dl class="vs-sides">
+        <div>
+          <dt><i class="is-dem vs-dot"></i>{{ totalsDemName() }}</dt>
+          <dd><b class="vs-pct">{{ totalsDemPercent() }}</b><span class="vs-count">{{ totalsDem() }}</span></dd>
+        </div>
+        <div>
+          <dt><i class="is-rep vs-dot"></i>{{ totalsRepName() }}</dt>
+          <dd><b class="vs-pct">{{ totalsRepPercent() }}</b><span class="vs-count">{{ totalsRep() }}</span></dd>
+        </div>
+      </dl>
+
+      <div class="vs-seats" :if="hasSeats()">
+        <div class="vs-seats-head">
+          <span class="is-dem">{{ seatsDem() }} seats</span>
+          <span class="is-rep">{{ seatsRep() }} seats</span>
+        </div>
+        <div class="vs-seats-bar" role="img" aria-label="House seats won by each party">
+          <span class="vs-seats-dem" :style="seatsDemBar()"></span>
+          <span class="vs-seats-rep" :style="seatsRepBar()"></span>
+          <i></i>
+        </div>
+        <p class="vs-small">{{ seatsNote() }}</p>
+      </div>
+
+      <p class="vs-more vs-status" :if="!hasSeats() && totalsStatus()">{{ totalsStatus() }}</p>
+      <p class="vs-more vs-small">{{ totalsVotes() }}</p>
+      <p class="vs-more vs-small" :if="totalsNotes()">{{ totalsNotes() }}</p>
+    </div>
+    <p class="vs-status" :if="!totalsHasRace()">This office was not on the ballot here in 2026.</p>
+  </section>
+
+  <section class="vs-panel vs-totals" :if="loaded() && !hasResults() && !failed()">
+    <h2>No results yet</h2>
+    <p class="vs-status">The map is drawn, but the results have not been published here yet.</p>
+  </section>
+
+  <section class="vs-panel vs-totals" :if="failed()" role="alert">
+    <h2>The map could not load</h2>
+    <p class="vs-status">Check your connection and reload the page.</p>
+  </section>
+
+  {{-- The county under the pointer, or the one clicked. --}}
+  <section class="vs-county vs-panel" :if="county()" aria-live="polite">
+    <div class="vs-panel-head">
+      <div>
+        <p class="vs-eyebrow">{{ countyOffice() }}</p>
+        <h2>{{ countyName() }}</h2>
+        <a class="vs-link" :href="countyLink()">{{ countyState() }}</a>
+      </div>
+      <div class="vs-panel-side">
+        <button type="button" class="vs-close" aria-label="Close" :if="countyPinned()" @click="unpin()">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+        </button>
+        <p class="vs-margin" :class="countyLeansDem() ? 'is-dem' : 'is-rep'" :if="countyHasRace() && countyMargin()">{{ countyMargin() }}</p>
+      </div>
+    </div>
+
+    <div :if="countyHasRace()">
+      <div class="vs-share" role="img" aria-label="Share of the two-party vote" :if="countyHasSides()">
+        <span class="vs-share-dem" :style="countyDemBar()"></span>
+      </div>
+      <dl class="vs-sides">
+        <div>
+          <dt><i class="is-dem vs-dot"></i>{{ countyDemName() }}</dt>
+          <dd><b class="vs-pct">{{ countyDemPercent() }}</b><span class="vs-count">{{ countyDem() }}</span></dd>
+        </div>
+        <div>
+          <dt><i class="is-rep vs-dot"></i>{{ countyRepName() }}</dt>
+          <dd><b class="vs-pct">{{ countyRepPercent() }}</b><span class="vs-count">{{ countyRep() }}</span></dd>
+        </div>
+      </dl>
+      <p class="vs-small">{{ countyTotal() }}<span :if="countyCounted()">. {{ countyCounted() }}</span></p>
+      <p class="vs-small" :if="countyNotes()">{{ countyNotes() }}</p>
+    </div>
+    <p class="vs-status" :if="!countyHasRace()">No results here for this office.</p>
+  </section>
+
+  {{-- Turning the map without a touch screen. --}}
+  <div class="vs-controls" role="group" aria-label="Map view">
+    <button type="button" aria-label="Zoom in" title="Zoom in" @click="zoomIn()">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+    </button>
+    <button type="button" aria-label="Zoom out" title="Zoom out" @click="zoomOut()">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><path d="M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+    </button>
+    <button type="button" aria-label="Turn left" title="Turn left" @click="turnLeft()">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><path d="M3.5 8a4.5 4.5 0 1 0 1.6-3.4M3 2.5v2.6h2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+    </button>
+    <button type="button" aria-label="Turn right" title="Turn right" @click="turnRight()">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><path d="M12.5 8a4.5 4.5 0 1 1-1.6-3.4M13 2.5v2.6h-2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+    </button>
+    <button type="button" aria-label="Reset the view" title="Reset the view" @click="resetView()">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><path d="M2.5 7.5 8 3l5.5 4.5M4 6.5V13h8V6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+    </button>
+  </div>
+
+  <p class="vs-hint" :class="explored() ? 'is-gone' : ''" :if="loaded() && !failed() && !county()" aria-hidden="true">
+    <span class="vs-hint-mouse">Drag to move. Scroll to zoom. Right-drag to orbit.</span>
+    <span class="vs-hint-touch">Pinch to zoom. Two fingers to turn and tilt.</span>
+  </p>
+
+  {{-- What the colours and heights mean, and where the numbers are from. --}}
+  <aside class="vs-key vs-panel" aria-label="Legend">
+    <div class="vs-key-row">
+      <span class="vs-eyebrow">Colour: the margin</span>
+    </div>
+    <div class="vs-scale" role="img" aria-label="Colour scale from a Republican lead of 50 points or more, through even, to a Democratic lead of 50 points or more"></div>
+    <div class="vs-scale-ends">
+      <span>R+50</span>
+      <span>Even</span>
+      <span>D+50</span>
+    </div>
+    <ul class="vs-chips vs-more">
+      <li><i class="is-grey"></i>No Democrat against a Republican</li>
+      <li><i class="is-flat"></i>No race</li>
+    </ul>
+
+    <div class="vs-key-height vs-key-row">
+      <span class="vs-eyebrow">Height</span>
+      <div class="vs-seg vs-seg-small" role="group" aria-label="Height">
+        <button type="button" :class="metric() === 'votes' ? 'is-on' : ''" :aria-pressed="metric() === 'votes' ? 'true' : 'false'" @click="chooseMetric('votes')">Votes</button>
+        <button type="button" :class="metric() === 'density' ? 'is-on' : ''" :aria-pressed="metric() === 'density' ? 'true' : 'false'" @click="chooseMetric('density')">Per sq mi</button>
+      </div>
+      <button type="button" class="vs-reset" @click="resetView()">Reset</button>
+    </div>
+
+    <p class="vs-small vs-source" :if="loaded() && hasResults()">
+      <span class="vs-badge" :class="official() ? 'is-official' : ''">{{ sourceBadge() }}</span>
+      <span>{{ sourceLine() }}</span>
+      <span class="vs-credit vs-more">{{ sourceCredit() }}</span>
+    </p>
+    <p class="vs-small vs-warn" :if="loaded() && !hasWebgl()">This browser has no WebGL, so counties are drawn flat.</p>
   </aside>
 </div>
 
 <style>
-/* The whole window, less nothing: the map is the page. */
 .vs-stage {
+  --vs-bg: #0b0f17;
+  --vs-panel: rgba(14, 19, 30, 0.74);
+  --vs-line: rgba(148, 163, 184, 0.18);
+  --vs-line-strong: rgba(148, 163, 184, 0.32);
+  --vs-text: #e9edf5;
+  --vs-muted: #9aa5b8;
+  --vs-faint: #6f7a8e;
+  --vs-dem: #5b9dff;
+  --vs-rep: #ff6f66;
+  --vs-gap: 16px;
+
+  position: relative;
+  overflow: hidden;
+  width: 100%;
   height: 100vh;
   height: 100dvh;
-  background: #0b0f17;
+  color: var(--vs-text);
+  background: var(--vs-bg);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+.vs-stage *,
+.vs-stage *::before,
+.vs-stage *::after {
+  box-sizing: border-box;
+}
+
+.vs-stage p,
+.vs-stage h2,
+.vs-stage dl,
+.vs-stage dd,
+.vs-stage ul {
+  margin: 0;
+  padding: 0;
+}
+
+.vs-stage ul {
+  list-style: none;
+}
+
+.vs-stage button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.vs-stage :focus-visible {
+  outline: 2px solid #8ab4ff;
+  outline-offset: 2px;
+}
+
+.vs-map {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+
+/* --- Loading --- */
+
+.vs-veil {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  z-index: 900;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  color: var(--vs-muted);
+  background: var(--vs-bg);
+  transition: opacity 0.5s ease, visibility 0.5s;
+}
+
+.vs-veil.is-done {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.vs-veil-mark rect {
+  transform-origin: 50% 100%;
+  transform-box: fill-box;
+  animation: vs-rise 1.4s ease-in-out infinite;
+}
+
+.vs-veil-mark rect:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.vs-veil-mark rect:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes vs-rise {
+  0%,
+  100% {
+    transform: scaleY(0.45);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* --- Top bar --- */
+
+.vs-top {
+  display: grid;
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1000;
+  gap: 12px;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 14px var(--vs-gap) 28px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(11, 15, 23, 0.92) 0%, rgba(11, 15, 23, 0.6) 55%, rgba(11, 15, 23, 0) 100%);
+}
+
+.vs-top > * {
+  pointer-events: auto;
+}
+
+.vs-top-start,
+.vs-top-end {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.vs-top-end {
+  justify-content: flex-end;
+}
+
+.vs-brand {
+  display: inline-flex;
+  gap: 9px;
+  align-items: center;
+  color: var(--vs-text);
+  font-weight: 650;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.vs-tag,
+.vs-crumb {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 3px 10px;
+  color: var(--vs-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-decoration: none;
+  border: 1px solid var(--vs-line);
+  border-radius: 999px;
+}
+
+.vs-crumb:hover {
+  color: var(--vs-text);
+  border-color: var(--vs-line-strong);
+}
+
+.vs-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--vs-panel);
+  border: 1px solid var(--vs-line);
+  border-radius: 12px;
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+}
+
+.vs-seg button {
+  padding: 7px 14px;
+  color: var(--vs-muted);
+  font-weight: 550;
+  font-size: 13px;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.vs-seg button:hover {
+  color: var(--vs-text);
+}
+
+.vs-seg button.is-on {
+  color: #0b0f17;
+  background: #f1f4f9;
+}
+
+.vs-seg-small {
+  border-radius: 9px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.vs-seg-small button {
+  padding: 4px 9px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.vs-btn {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 12px;
+  color: var(--vs-text);
+  font-weight: 550;
+  font-size: 13px;
+  text-decoration: none;
+  background: var(--vs-panel);
+  border: 1px solid var(--vs-line);
+  border-radius: 10px;
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  transition: border-color 0.15s ease;
+}
+
+.vs-btn:hover {
+  border-color: var(--vs-line-strong);
+}
+
+.vs-btn-quiet {
+  color: var(--vs-muted);
+  background: transparent;
+  border-color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.vs-btn-quiet:hover {
+  color: var(--vs-text);
+  border-color: transparent;
+}
+
+/* --- The list of states --- */
+
+.vs-states {
+  position: fixed;
+  inset: 62px var(--vs-gap) auto auto;
+  width: min(520px, calc(100vw - 2 * var(--vs-gap)));
+  max-height: min(82vh, 680px);
+  margin: 0;
+  padding: 16px;
+  overflow-y: auto;
+  color: var(--vs-text);
+  background: rgba(14, 19, 30, 0.96);
+  border: 1px solid var(--vs-line-strong);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.vs-states::backdrop {
+  background: rgba(5, 8, 13, 0.35);
+}
+
+.vs-states-title {
+  margin-bottom: 10px;
+  color: var(--vs-muted);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vs-states ul {
+  columns: 3;
+  column-gap: 12px;
+}
+
+.vs-states li {
+  break-inside: avoid;
+}
+
+.vs-states a {
+  display: block;
+  padding: 5px 8px;
+  color: #c6cedb;
+  font-size: 13.5px;
+  text-decoration: none;
+  border-radius: 7px;
+}
+
+.vs-states a:hover {
+  color: #fff;
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.vs-states a.is-here {
+  color: #0b0f17;
+  background: #f1f4f9;
+}
+
+/* --- Panels --- */
+
+.vs-panel {
+  position: absolute;
+  z-index: 1000;
+  width: 304px;
+  max-width: calc(100vw - 2 * var(--vs-gap));
+  padding: 16px;
+  background: var(--vs-panel);
+  border: 1px solid var(--vs-line);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+}
+
+.vs-totals {
+  top: 76px;
+  left: var(--vs-gap);
+}
+
+.vs-county {
+  bottom: var(--vs-gap);
+  left: var(--vs-gap);
+}
+
+.vs-key {
+  right: var(--vs-gap);
+  bottom: var(--vs-gap);
+}
+
+.vs-panel-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.vs-panel-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.vs-panel h2 {
+  font-weight: 650;
+  font-size: 18px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.vs-eyebrow {
+  color: var(--vs-muted);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.vs-link {
+  color: var(--vs-muted);
+  font-size: 13px;
+  text-decoration: underline;
+  text-decoration-color: var(--vs-line-strong);
+  text-underline-offset: 3px;
+}
+
+.vs-link:hover {
+  color: var(--vs-text);
+}
+
+.vs-margin {
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.vs-margin.is-dem,
+.vs-seats-head .is-dem {
+  color: var(--vs-dem);
+}
+
+.vs-margin.is-rep,
+.vs-seats-head .is-rep {
+  color: var(--vs-rep);
+}
+
+.vs-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--vs-muted);
+  background: rgba(148, 163, 184, 0.12);
+  border: 0;
+  border-radius: 999px;
+}
+
+.vs-close:hover {
+  color: var(--vs-text);
+}
+
+/* The two-party vote: the Democratic share from the left, on the Republican. */
+.vs-share {
+  position: relative;
+  height: 8px;
+  margin-top: 14px;
+  overflow: hidden;
+  background: var(--vs-rep);
+  border-radius: 999px;
+}
+
+.vs-share-dem {
+  display: block;
+  height: 100%;
+  background: var(--vs-dem);
+  border-right: 2px solid var(--vs-bg);
+  transition: width 0.35s ease;
+}
+
+.vs-sides {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.vs-sides > div {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.vs-sides dt {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  color: #d5dbe6;
+  font-size: 13.5px;
+}
+
+.vs-sides dd {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.vs-pct {
+  font-weight: 650;
+}
+
+.vs-count {
+  min-width: 78px;
+  color: var(--vs-muted);
+  font-size: 12.5px;
+  text-align: right;
+}
+
+.vs-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.vs-dot.is-dem {
+  background: var(--vs-dem);
+}
+
+.vs-dot.is-rep {
+  background: var(--vs-rep);
+}
+
+.vs-seats {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vs-line);
+}
+
+.vs-seats-head {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 650;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.vs-seats-bar {
+  display: flex;
+  position: relative;
+  justify-content: space-between;
+  height: 8px;
+  margin: 6px 0;
+  background: rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+}
+
+.vs-seats-dem,
+.vs-seats-rep {
+  display: block;
+  height: 100%;
+  transition: width 0.35s ease;
+}
+
+.vs-seats-dem {
+  background: var(--vs-dem);
+  border-radius: 999px 0 0 999px;
+}
+
+.vs-seats-rep {
+  background: var(--vs-rep);
+  border-radius: 0 999px 999px 0;
+}
+
+/* The line a majority has to cross. */
+.vs-seats-bar i {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: #f1f4f9;
+  border-radius: 2px;
+}
+
+.vs-status {
+  margin-top: 12px;
+  color: #c6cedb;
+  font-size: 13.5px;
+}
+
+.vs-small {
+  margin-top: 8px;
+  color: var(--vs-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.vs-warn {
+  color: #fbbf24;
+}
+
+/* --- Legend --- */
+
+.vs-key-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.vs-key-height {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vs-line);
 }
 
 /* The same stops as MARGIN_STOPS in resources/functions/election.ts. */
-.vs-legend {
+.vs-scale {
+  height: 10px;
+  margin-top: 8px;
   background: linear-gradient(90deg, #a50f15 0%, #de2d26 25%, #fb9a8a 42%, #e8dce4 50%, #9ab8ef 58%, #3b82f6 75%, #1e40af 100%);
+  border-radius: 999px;
+}
+
+.vs-scale-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  color: var(--vs-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.vs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 10px;
+  color: var(--vs-muted);
+  font-size: 12px;
+}
+
+.vs-chips li {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.vs-chips i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.vs-chips .is-grey {
+  background: #7c8597;
+}
+
+.vs-chips .is-flat {
+  background: #1c2434;
+  border: 1px solid var(--vs-line-strong);
+}
+
+.vs-reset {
+  display: none;
+  margin-left: auto;
+  padding: 4px 9px;
+  color: var(--vs-muted);
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--vs-line);
+  border-radius: 8px;
+}
+
+.vs-reset:hover {
+  color: var(--vs-text);
+  border-color: var(--vs-line-strong);
+}
+
+.vs-source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.vs-credit {
+  flex-basis: 100%;
+}
+
+.vs-badge {
+  padding: 2px 8px;
+  font-weight: 600;
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.12);
+  border-radius: 999px;
+}
+
+.vs-badge.is-official {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+/* --- Map controls --- */
+
+.vs-controls {
+  display: flex;
+  position: absolute;
+  top: 50%;
+  right: var(--vs-gap);
+  z-index: 1000;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--vs-panel);
+  border: 1px solid var(--vs-line);
+  border-radius: 12px;
+  transform: translateY(-50%);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+}
+
+.vs-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 34px;
+  color: var(--vs-muted);
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--vs-line);
+}
+
+.vs-controls button:first-child {
+  border-top: 0;
+}
+
+.vs-controls button:hover {
+  color: var(--vs-text);
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.vs-hint {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  z-index: 1000;
+  padding: 6px 14px;
+  color: var(--vs-muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+  pointer-events: none;
+  background: var(--vs-panel);
+  border: 1px solid var(--vs-line);
+  border-radius: 999px;
+  transform: translateX(-50%);
+  transition: opacity 0.4s ease;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.vs-hint.is-gone {
+  opacity: 0;
+}
+
+.vs-hint-touch {
+  display: none;
+}
+
+@media (hover: none) {
+  .vs-hint-mouse {
+    display: none;
+  }
+
+  .vs-hint-touch {
+    display: inline;
+  }
+
+  .vs-controls {
+    display: none;
+  }
+
+  .vs-reset {
+    display: inline-block;
+  }
+}
+
+/* --- Narrower: the office switcher takes its own row --- */
+
+@media (max-width: 960px) {
+  .vs-top {
+    grid-template-columns: 1fr auto;
+    row-gap: 10px;
+  }
+
+  .vs-offices {
+    display: grid;
+    grid-row: 2;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .vs-offices button {
+    padding: 8px 4px;
+  }
+
+  .vs-totals {
+    top: 122px;
+  }
+}
+
+/* --- A phone: what is shown above the map, the place and the legend below --- */
+
+@media (max-width: 720px) {
+  .vs-stage {
+    --vs-gap: 12px;
+  }
+
+  .vs-top {
+    padding-top: 10px;
+    padding-bottom: 18px;
+  }
+
+  .vs-tag,
+  .vs-crumb span {
+    display: none;
+  }
+
+  .vs-crumb {
+    padding: 5px 7px;
+  }
+
+  .vs-panel {
+    width: auto;
+    padding: 12px 14px;
+    border-radius: 14px;
+  }
+
+  .vs-totals {
+    top: 110px;
+    right: var(--vs-gap);
+  }
+
+  .vs-panel h2 {
+    font-size: 16px;
+  }
+
+  .vs-margin {
+    font-size: 22px;
+  }
+
+  .vs-share {
+    margin-top: 10px;
+  }
+
+  .vs-sides {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .vs-count {
+    display: none;
+  }
+
+  .vs-sides dt {
+    overflow: hidden;
+    font-size: 12.5px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .vs-seats {
+    margin-top: 10px;
+    padding-top: 8px;
+  }
+
+  .vs-more {
+    display: none;
+  }
+
+  .vs-key {
+    right: var(--vs-gap);
+    bottom: var(--vs-gap);
+    left: var(--vs-gap);
+    padding: 10px 14px 12px;
+  }
+
+  .vs-key > .vs-key-row:first-child {
+    display: none;
+  }
+
+  .vs-scale {
+    margin-top: 0;
+  }
+
+  .vs-key-height {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+
+  .vs-source {
+    margin-top: 8px;
+  }
+
+  .vs-county {
+    right: var(--vs-gap);
+    bottom: 138px;
+  }
+
+  .vs-county .vs-count {
+    display: inline;
+    min-width: 0;
+  }
+
+  .vs-county .vs-sides {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .vs-hint {
+    bottom: 146px;
+    font-size: 12px;
+  }
+
+  .vs-states {
+    inset: 56px var(--vs-gap) auto var(--vs-gap);
+    width: auto;
+  }
+
+  .vs-states ul {
+    columns: 2;
+  }
+}
+
+/* --- A short window: the legend gives up its small print to the map --- */
+
+@media (max-height: 760px) and (min-width: 721px) {
+  .vs-key .vs-more {
+    display: none;
+  }
+
+  .vs-key-height {
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vs-veil-mark rect {
+    animation: none;
+  }
+
+  .vs-share-dem,
+  .vs-seats-dem,
+  .vs-seats-rep,
+  .vs-veil,
+  .vs-hint {
+    transition: none;
+  }
 }
 </style>

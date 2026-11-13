@@ -12,7 +12,7 @@ export default {
   name: env.APP_NAME ?? 'Votescape',
   // Shown on the starter page, the coming-soon page, and any page that sets
   // no description of its own.
-  description: '',
+  description: 'How every county in every state voted in the 2026 midterm elections, as a 3D map.',
   env: env.APP_ENV ?? 'local',
   url: env.APP_URL ?? 'stacks.localhost',
   redirectUrls: [],

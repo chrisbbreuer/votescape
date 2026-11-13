@@ -34,6 +34,7 @@ type TsMaps = typeof import('ts-maps')
 
 const PITCH = 58
 const BEARING = -14
+const MAX_PITCH = 78
 const SOURCE = 'counties'
 const PRISMS = 'counties-3d'
 const GROUND = 'counties-ground'
@@ -73,6 +74,8 @@ export interface Summary {
   /** `Called for …`, `Not called yet`, or seats won. */
   status: string
   notes: string[]
+  /** House seats by who won them, where the office is the House. */
+  seats?: { dem: number, rep: number, open: number }
 }
 
 export interface ElectionMapOptions {
@@ -88,6 +91,8 @@ export interface ElectionMapOptions {
   onSelect: (county: CountyInfo | null) => void
   /** Once the data is in. `meta` is null where no results have been built. */
   onReady: (ready: { meta: ResultsFile['meta'] | null, webgl: boolean }) => void
+  /** The first time the reader moves the map themselves. */
+  onExplore?: () => void
 }
 
 export interface ElectionMapHandle {
@@ -95,7 +100,18 @@ export interface ElectionMapHandle {
   setMetric: (metric: Metric) => void
   summary: () => Summary | null
   resetView: () => void
+  /** Zoom by `levels`: positive is closer. */
+  zoom: (levels: number) => void
+  /** Turn the view by `degrees`, clockwise as seen from above. */
+  turn: (degrees: number) => void
+  /** Let go of the county that was clicked. */
+  clearSelection: () => void
   destroy: () => void
+}
+
+/** Open a state's page, or the country's for an empty code. */
+export function openState(code: string): void {
+  location.assign(code ? `/state/${code}` : '/')
 }
 
 // --- Loading ts-maps --------------------------------------------------------
@@ -188,17 +204,28 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
   let office = options.office
   let metric = options.metric
 
+  /** A phone held upright: the panels stack above and below the map, not beside it. */
+  const narrow = (): boolean => el.clientWidth < 720
+
   const home = (): { center: [number, number], zoom: number } => {
     const bounds = focus ? focus.properties.b : unionBounds(states)
+    if (narrow()) {
+      // Fitted across nearly the whole width, and looked at a little north of
+      // its middle, which sets it lower on screen: clear of the totals above.
+      const view = viewFor(bounds, el.clientWidth, el.clientHeight, PITCH, focus ? 0.8 : 0.96, 0.34)
+      return { center: [view.center[0] + (bounds[3] - bounds[1]) * (focus ? 0.2 : 0.48), view.center[1]], zoom: view.zoom }
+    }
     // A state alone is given more room above it: its towers are taller on
     // screen than the country's.
-    const view = viewFor(bounds, el.clientWidth, el.clientHeight, PITCH, focus ? 0.6 : 0.74, focus ? 0.42 : 0.5)
+    const view = viewFor(bounds, el.clientWidth, el.clientHeight, PITCH, focus ? 0.6 : 0.68, focus ? 0.42 : 0.5)
     if (focus)
       return view
-    // The country is looked at a little south-east of its middle, which
-    // moves it up and left on screen: out from under the legend, and into
-    // the room the Alaska and Hawaii insets leave beside them.
-    return { center: [view.center[0] - (bounds[3] - bounds[1]) * 0.07, view.center[1] + (bounds[2] - bounds[0]) * 0.03], zoom: view.zoom }
+    // The country is looked at a little north-west of its middle, which sets
+    // it down and right on screen: the totals sit over its north-west corner,
+    // where the tallest towers on the Pacific would otherwise stand behind them.
+    // A wide window leaves room at both sides, and there it stays in the middle.
+    const east = el.clientWidth / el.clientHeight > 1.75 ? 0.02 : -0.02
+    return { center: [view.center[0] + (bounds[3] - bounds[1]) * 0.05, view.center[1] + (bounds[2] - bounds[0]) * east], zoom: view.zoom }
   }
   const start = home()
 
@@ -211,7 +238,7 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
     zoomControl: false,
     pitch: PITCH,
     bearing: BEARING,
-    maxPitch: 78,
+    maxPitch: MAX_PITCH,
     theme: 'dark',
     attributionControl: false,
     style: { version: 8, sources: {}, layers: [{ id: 'night', type: 'background', paint: { 'background-color': '#0b0f17' } }] },
@@ -223,7 +250,7 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
   /** Metres to a unit of the metric, for the tallest prism to stand a share of the view's height. */
   const scale = (): number => {
     const largest = scope().reduce((max, c) => Math.max(max, heightValue(c, office, metric)), 0)
-    return metresPerUnit(largest, home().zoom, el.clientHeight * (focus ? 0.34 : 0.3))
+    return metresPerUnit(largest, home().zoom, el.clientHeight * (narrow() ? 0.22 : focus ? 0.34 : 0.27))
   }
 
   // --- Roof labels ---
@@ -239,7 +266,7 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
     // The largest first, each one kept if its label would not sit on one
     // already kept. Measured on screen, where the labels are: two towers a
     // long way apart on the ground can stand one behind the other.
-    const wanted = focus ? 7 : 14
+    const wanted = narrow() ? 5 : focus ? 7 : 14
     const chosen: CountyFeature[] = []
     const placed: Array<{ x: number, y: number }> = []
     const ranked = [...scope()].sort((a, b) => metricValue(b, office, metric) - metricValue(a, office, metric)).slice(0, wanted * 4)
@@ -363,6 +390,7 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
         repName: sideName(s, 'rep'),
         status: statusOf(s),
         notes: flagNotes(s.flags, office),
+        seats: s.seats ? { dem: s.seats.dem, rep: s.seats.rep, open: s.seats.open + s.seats.other } : undefined,
       }
     }
     const all = Object.values(data.states)
@@ -387,6 +415,7 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
           ? `${all.length} states, each by its most prominent race`
           : `${all.length} states voted. Called: ${won('dem')} Democratic, ${won('rep')} Republican`,
       notes: office === 'top' ? ['Senate where there was a race, otherwise governor, otherwise U.S. House.'] : [],
+      seats: office === 'house' ? seats : undefined,
     }
   }
 
@@ -423,6 +452,7 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
   })
 
   map.on('click', (e: any) => {
+    explored()
     const id = countyAt(e.containerPoint)
     if (selected !== undefined)
       map.setFeatureState({ source: SOURCE, id: selected }, { selected: false })
@@ -431,6 +461,71 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
       map.setFeatureState({ source: SOURCE, id: selected }, { selected: true })
     options.onSelect(selected === undefined ? null : describe(selected))
   })
+
+  // --- Turning and tilting ---
+  //
+  // The library pans with a drag and turns with two fingers, which leaves a
+  // mouse with no way to look at the towers from another side. A drag with
+  // the right button, or with Alt held, orbits: across turns, up and down tilts.
+
+  let orbit: { x: number, y: number, bearing: number, pitch: number, pointer: number } | null = null
+
+  const onOrbitStart = (e: PointerEvent): void => {
+    if (e.pointerType !== 'mouse' || !(e.button === 2 || (e.button === 0 && e.altKey)))
+      return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    orbit = { x: e.clientX, y: e.clientY, bearing: map.getBearing(), pitch: map.getPitch(), pointer: e.pointerId }
+    el.setPointerCapture(e.pointerId)
+    explored()
+  }
+  const onOrbitMove = (e: PointerEvent): void => {
+    if (!orbit || e.pointerId !== orbit.pointer)
+      return
+    e.stopImmediatePropagation()
+    map.setBearing(orbit.bearing + (e.clientX - orbit.x) * 0.3)
+    map.setPitch(Math.max(0, Math.min(MAX_PITCH, orbit.pitch - (e.clientY - orbit.y) * 0.25)))
+  }
+  const onOrbitEnd = (e: PointerEvent): void => {
+    if (!orbit || e.pointerId !== orbit.pointer)
+      return
+    orbit = null
+    if (el.hasPointerCapture(e.pointerId))
+      el.releasePointerCapture(e.pointerId)
+    relabel()
+  }
+  const onContextMenu = (e: Event): void => e.preventDefault()
+
+  el.addEventListener('pointerdown', onOrbitStart, true)
+  el.addEventListener('pointermove', onOrbitMove, true)
+  el.addEventListener('pointerup', onOrbitEnd, true)
+  el.addEventListener('pointercancel', onOrbitEnd, true)
+  el.addEventListener('contextmenu', onContextMenu)
+
+  // Which labels fit depends on where the towers stand on screen, so they
+  // are chosen again once the view comes to rest.
+  let relabelTimer: ReturnType<typeof setTimeout> | null = null
+  function relabel(): void {
+    if (relabelTimer)
+      clearTimeout(relabelTimer)
+    relabelTimer = setTimeout(() => {
+      relabelTimer = null
+      if (map.getStyleLayer?.(PRISMS))
+        label()
+    }, 160)
+  }
+  map.on('moveend', relabel)
+  map.on('zoomend', relabel)
+
+  let hasExplored = false
+  function explored(): void {
+    if (hasExplored)
+      return
+    hasExplored = true
+    options.onExplore?.()
+  }
+  map.on('dragstart', explored)
+  map.on('zoomstart', explored)
 
   options.onReady({ meta: results?.meta ?? null, webgl: webglAvailable() })
 
@@ -449,7 +544,29 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
       const view = home()
       map.flyTo(view.center, view.zoom, { pitch: PITCH, bearing: BEARING, duration: 0.8 })
     },
+    zoom(levels) {
+      explored()
+      map.setZoom(map.getZoom() + levels, { animate: true })
+    },
+    turn(degrees) {
+      explored()
+      map.rotateTo(map.getBearing() + degrees, { animate: true, duration: 450 })
+      relabel()
+    },
+    clearSelection() {
+      if (selected !== undefined)
+        map.setFeatureState({ source: SOURCE, id: selected }, { selected: false })
+      selected = undefined
+      options.onSelect(null)
+    },
     destroy() {
+      if (relabelTimer)
+        clearTimeout(relabelTimer)
+      el.removeEventListener('pointerdown', onOrbitStart, true)
+      el.removeEventListener('pointermove', onOrbitMove, true)
+      el.removeEventListener('pointerup', onOrbitEnd, true)
+      el.removeEventListener('pointercancel', onOrbitEnd, true)
+      el.removeEventListener('contextmenu', onContextMenu)
       for (const marker of labels)
         marker.remove()
       labels = []
