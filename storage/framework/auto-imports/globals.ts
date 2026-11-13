@@ -10,6 +10,8 @@ Object.assign(globalThis, autoImports)
 
 // TypeScript declarations
 declare global {
+  const versioned: typeof autoImports.versioned
+  const dataFiles: typeof autoImports.dataFiles
   const isDark: typeof autoImports.isDark
   const preferredDark: typeof autoImports.preferredDark
   const toggleDark: typeof autoImports.toggleDark

@@ -10,17 +10,20 @@ import { schedule } from '@stacksjs/scheduler'
  * @see https://docs.stacksjs.com/scheduling
  */
 export default function (): void {
-  // Run the Inspire job every hour. An example, so it ships commented out
-  // like the others: live, it put an always-on scheduler daemon on every
-  // deploy of every new app, and `buddy new --minimal` (which removes
-  // app/Jobs) left it naming a job that no longer exists.
-  // schedule.job('Inspire').hourly().setTimeZone('America/Los_Angeles')
-
-  // Run a custom action every five minutes
-  // schedule.action('CleanupTempFiles').everyFiveMinutes()
-
-  // Run a shell command daily at midnight
-  // schedule.command('echo "Daily maintenance complete"').daily()
+  // The count goes on for weeks after election day: late ballots, Alaska's
+  // ranked-choice rounds, runoffs, certification. Every six hours the results
+  // are fetched and built again, where the site runs, and written over the
+  // file the map reads. The page names that file by when it last changed, so
+  // the next visitor gets the new numbers with no deploy.
+  //
+  // The build refuses to write anything it cannot account for (a county with
+  // no shape, a state that does not add up), so a bad fetch leaves the last
+  // good file in place. Stop this once every state has certified.
+  schedule.command('bun scripts/build-results.ts --refresh')
+    .cron('17 */6 * * *')
+    .setTimeZone('UTC')
+    .withoutOverlapping(30)
+    .withName('votescape-results')
 }
 
 process.on('SIGINT', () => {

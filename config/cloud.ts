@@ -84,8 +84,9 @@ export const tsCloud: TsCloudConfig = {
       healthCheck: { path: '/' },
       // No migrate step: there is no database to migrate.
       preStart: ['bun install --frozen-lockfile'],
-      // What the data scripts download and work from. The files the site
-      // serves are the ones they write to public/data.
+      // What the data scripts download and keep as they work. The files the
+      // site serves are the ones they write to public/data; the scheduled
+      // refresh (app/Scheduler.ts) builds its own working copies on the box.
       exclude: ['storage/data', 'tests'],
       env: {
         HOST: '127.0.0.1',

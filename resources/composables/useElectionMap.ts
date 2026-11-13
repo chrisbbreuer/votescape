@@ -19,6 +19,7 @@ import {
   colorExpression,
   escapeHtml,
   flagNotes,
+  formatMargin,
   formatVotes,
   heightExpression,
   heightValue,
@@ -93,6 +94,14 @@ export interface ElectionMapOptions {
   onReady: (ready: { meta: ResultsFile['meta'] | null, webgl: boolean }) => void
   /** The first time the reader moves the map themselves. */
   onExplore?: () => void
+  /** A county to open with, by id: the one a shared link names. */
+  county?: string
+  /**
+   * The page's own elements this fills and listens to, by id: the search
+   * field and its list of suggestions, the popover they are in, and the
+   * element the table of results is written into.
+   */
+  ids?: { search: string, places: string, popover: string, table: string }
 }
 
 export interface ElectionMapHandle {
@@ -106,6 +115,8 @@ export interface ElectionMapHandle {
   turn: (degrees: number) => void
   /** Let go of the county that was clicked. */
   clearSelection: () => void
+  /** Pin a county by id, and bring it into view. */
+  select: (id: string) => void
   destroy: () => void
 }
 
@@ -181,11 +192,14 @@ function webglAvailable(): boolean {
 // --- The map ----------------------------------------------------------------
 
 export async function mountElectionMap(containerId: string, options: ElectionMapOptions): Promise<ElectionMapHandle | null> {
+  // The server names each file with a version, so a browser may keep it for
+  // good and still get the new one the moment it changes.
+  const named = document.getElementById(containerId)?.dataset ?? {}
   const [maps, countiesFile, statesFile, results] = await Promise.all([
     ensureTsMaps(),
-    json<{ features: CountyFeature[] }>('/data/geo/counties.json'),
-    json<{ features: StateFeature[] }>('/data/geo/states.json'),
-    json<ResultsFile>('/data/results/2026.json'),
+    json<{ features: CountyFeature[] }>(named.counties || '/data/geo/counties.json'),
+    json<{ features: StateFeature[] }>(named.states || '/data/geo/states.json'),
+    json<ResultsFile>(named.results || '/data/results/2026.json'),
   ])
   // Loading yields to the page's own start-up; find the element after it.
   const el = document.getElementById(containerId)
@@ -454,53 +468,12 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
   map.on('click', (e: any) => {
     explored()
     const id = countyAt(e.containerPoint)
-    if (selected !== undefined)
-      map.setFeatureState({ source: SOURCE, id: selected }, { selected: false })
-    selected = id === selected ? undefined : id
-    if (selected !== undefined)
-      map.setFeatureState({ source: SOURCE, id: selected }, { selected: true })
-    options.onSelect(selected === undefined ? null : describe(selected))
+    pin(id === selected ? undefined : id)
   })
 
-  // --- Turning and tilting ---
-  //
-  // The library pans with a drag and turns with two fingers, which leaves a
-  // mouse with no way to look at the towers from another side. A drag with
-  // the right button, or with Alt held, orbits: across turns, up and down tilts.
-
-  let orbit: { x: number, y: number, bearing: number, pitch: number, pointer: number } | null = null
-
-  const onOrbitStart = (e: PointerEvent): void => {
-    if (e.pointerType !== 'mouse' || !(e.button === 2 || (e.button === 0 && e.altKey)))
-      return
-    e.preventDefault()
-    e.stopImmediatePropagation()
-    orbit = { x: e.clientX, y: e.clientY, bearing: map.getBearing(), pitch: map.getPitch(), pointer: e.pointerId }
-    el.setPointerCapture(e.pointerId)
-    explored()
-  }
-  const onOrbitMove = (e: PointerEvent): void => {
-    if (!orbit || e.pointerId !== orbit.pointer)
-      return
-    e.stopImmediatePropagation()
-    map.setBearing(orbit.bearing + (e.clientX - orbit.x) * 0.3)
-    map.setPitch(Math.max(0, Math.min(MAX_PITCH, orbit.pitch - (e.clientY - orbit.y) * 0.25)))
-  }
-  const onOrbitEnd = (e: PointerEvent): void => {
-    if (!orbit || e.pointerId !== orbit.pointer)
-      return
-    orbit = null
-    if (el.hasPointerCapture(e.pointerId))
-      el.releasePointerCapture(e.pointerId)
-    relabel()
-  }
-  const onContextMenu = (e: Event): void => e.preventDefault()
-
-  el.addEventListener('pointerdown', onOrbitStart, true)
-  el.addEventListener('pointermove', onOrbitMove, true)
-  el.addEventListener('pointerup', onOrbitEnd, true)
-  el.addEventListener('pointercancel', onOrbitEnd, true)
-  el.addEventListener('contextmenu', onContextMenu)
+  // Turning and tilting with a mouse is the library's own `dragRotate`: a drag
+  // with the right button, or with Alt held. It ends in a `moveend`, which is
+  // when the labels are chosen again, below.
 
   // Which labels fit depends on where the towers stand on screen, so they
   // are chosen again once the view comes to rest.
@@ -526,13 +499,177 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
   }
   map.on('dragstart', explored)
   map.on('zoomstart', explored)
+  map.on('rotatestart', explored)
+  map.on('pitchstart', explored)
+
+  /** Pin a county, as a click on it would, and report it. */
+  function pin(id: string | undefined): void {
+    if (selected !== undefined)
+      map.setFeatureState({ source: SOURCE, id: selected }, { selected: false })
+    selected = id !== undefined && countyById.has(id) ? id : undefined
+    if (selected !== undefined)
+      map.setFeatureState({ source: SOURCE, id: selected }, { selected: true })
+    options.onSelect(selected === undefined ? null : describe(selected))
+  }
+
+  /** Pin a county and move to it, closer than the whole view where that is the country. */
+  function show(id: string): void {
+    const county = countyById.get(id)
+    if (!county)
+      return
+    pin(id)
+    explored()
+    const zoom = Math.max(map.getZoom(), home().zoom + (focus ? 0.6 : 1.6))
+    map.flyTo(county.properties.c, zoom, { pitch: map.getPitch(), bearing: map.getBearing(), duration: 0.9 })
+  }
+
+  // --- Finding a place by name ---
+  //
+  // A text field with the browser's own list of suggestions: every county as
+  // `Harris County, Texas`. Choosing one in this view's scope shows it; one in
+  // another state opens that state's page with the county pinned.
+
+  const ids = options.ids
+  const search = ids ? document.getElementById(ids.search) as HTMLInputElement | null : null
+  const places = ids ? document.getElementById(ids.places) : null
+  const byPlaceName = new Map<string, CountyFeature>()
+  if (search && places) {
+    const sorted = [...counties].sort((a, b) => a.properties.l.localeCompare(b.properties.l))
+    const html: string[] = []
+    for (const county of sorted) {
+      const name = `${county.properties.l}, ${stateByFips.get(county.properties.st)?.properties.n ?? ''}`
+      byPlaceName.set(name.toLowerCase(), county)
+      html.push(`<option value="${escapeHtml(name)}"></option>`)
+    }
+    places.innerHTML = html.join('')
+  }
+
+  function goToPlace(): void {
+    if (!search)
+      return
+    const text = search.value.trim().toLowerCase()
+    if (!text)
+      return
+    // The name in full, else the only place that starts with what was typed.
+    let county = byPlaceName.get(text)
+    if (!county) {
+      const starts = [...byPlaceName.entries()].filter(([name]) => name.startsWith(text))
+      county = starts.length === 1 ? starts[0]![1] : undefined
+    }
+    if (!county) {
+      search.setCustomValidity('Choose a county from the list')
+      search.reportValidity()
+      return
+    }
+    search.setCustomValidity('')
+    if (focus && county.properties.st !== focus.id) {
+      const code = stateByFips.get(county.properties.st)?.properties.usps.toLowerCase() ?? ''
+      location.assign(`/state/${code}?county=${encodeURIComponent(county.id)}`)
+      return
+    }
+    search.value = ''
+    const popover = ids ? document.getElementById(ids.popover) as (HTMLElement & { hidePopover?: () => void }) | null : null
+    try {
+      popover?.hidePopover?.()
+    }
+    catch {
+      // Not open.
+    }
+    show(county.id)
+  }
+  const onSearchInput = (): void => search?.setCustomValidity('')
+  const onSearchChange = (): void => {
+    // A suggestion picked from the list arrives as a change with a full name.
+    if (search && byPlaceName.has(search.value.trim().toLowerCase()))
+      goToPlace()
+  }
+  const onSearchKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      goToPlace()
+    }
+  }
+  search?.addEventListener('input', onSearchInput)
+  search?.addEventListener('change', onSearchChange)
+  search?.addEventListener('keydown', onSearchKey)
+
+  // --- The same numbers as a table ---
+  //
+  // For a reader who cannot use the map, or would rather read a list: every
+  // state for the country, every county for a state, largest first. Written
+  // when the table is opened, and again when what is shown changes under it.
+
+  const table = ids ? document.getElementById(ids.table) : null
+
+  function fillTable(): void {
+    if (!table || !results)
+      return
+    const data = results[office]
+    const cell = (text: string, numeric = false): string => `<td${numeric ? ' class="is-num"' : ''}>${text}</td>`
+    const marginCell = (margin: number | null | undefined): string => {
+      const text = formatMargin(margin)
+      const side = !text || text === 'Even' ? '' : (margin ?? 0) > 0 ? ' is-dem' : ' is-rep'
+      return `<td class="is-num${side}">${text || 'n/a'}</td>`
+    }
+    const share = (side: number, other: number): string => (side + other > 0 ? `${((side / (side + other)) * 100).toFixed(1)}%` : '')
+    const rows: string[] = []
+    if (focus) {
+      const list = scope()
+        .map(county => ({ county, row: data.counties[county.id] }))
+        .filter((entry): entry is { county: CountyFeature, row: NonNullable<typeof entry.row> } => !!entry.row)
+        .sort((a, b) => b.row[2] - a.row[2])
+      for (const { county, row } of list) {
+        rows.push(`<tr><th scope="row"><button type="button" data-county="${escapeHtml(county.id)}">${escapeHtml(county.properties.l)}</button></th>${marginCell(row[5])}${cell(share(row[0], row[1]), true)}${cell(share(row[1], row[0]), true)}${cell(Math.round(row[2]).toLocaleString('en-US'), true)}</tr>`)
+      }
+    }
+    else {
+      const list = states
+        .map(state => ({ state, row: data.states[state.id] }))
+        .filter((entry): entry is { state: StateFeature, row: StateSummary } => !!entry.row)
+        .sort((a, b) => b.row.total - a.row.total)
+      for (const { state, row } of list) {
+        rows.push(`<tr><th scope="row"><a href="/state/${state.properties.usps.toLowerCase()}${location.search}">${escapeHtml(state.properties.n)}</a></th>${marginCell(row.margin)}${cell(share(row.dem, row.rep), true)}${cell(share(row.rep, row.dem), true)}${cell(Math.round(row.total).toLocaleString('en-US'), true)}</tr>`)
+      }
+    }
+    const what = focus ? 'County' : 'State'
+    const title = `${OFFICE_LABELS[office]}, ${focus ? focus.properties.n : 'by state'}`
+    table.innerHTML = rows.length
+      ? `<table><caption>${escapeHtml(title)}</caption><thead><tr><th scope="col">${what}</th><th scope="col" class="is-num">Margin</th><th scope="col" class="is-num">Dem.</th><th scope="col" class="is-num">Rep.</th><th scope="col" class="is-num">Votes</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+      : '<p>This office was not on the ballot here in 2026.</p>'
+  }
+
+  const tablePopover = table?.closest('[popover]') as (HTMLElement & { hidePopover?: () => void }) | null
+  const onTableToggle = (e: Event): void => {
+    if ((e as Event & { newState?: string }).newState === 'open')
+      fillTable()
+  }
+  const onTableClick = (e: Event): void => {
+    const id = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-county]')?.dataset.county
+    if (!id)
+      return
+    try {
+      tablePopover?.hidePopover?.()
+    }
+    catch {
+      // Not open.
+    }
+    show(id)
+  }
+  tablePopover?.addEventListener('toggle', onTableToggle)
+  table?.addEventListener('click', onTableClick)
 
   options.onReady({ meta: results?.meta ?? null, webgl: webglAvailable() })
+
+  // A link that names a county opens with it pinned.
+  if (options.county && countyById.has(options.county) && (!focus || countyById.get(options.county)!.properties.st === focus.id))
+    pin(options.county)
 
   return {
     setOffice(next) {
       office = next
       paint()
+      if (tablePopover?.matches(':popover-open'))
+        fillTable()
       options.onSelect(selected === undefined ? null : describe(selected))
     },
     setMetric(next) {
@@ -554,19 +691,19 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
       relabel()
     },
     clearSelection() {
-      if (selected !== undefined)
-        map.setFeatureState({ source: SOURCE, id: selected }, { selected: false })
-      selected = undefined
-      options.onSelect(null)
+      pin(undefined)
+    },
+    select(id) {
+      show(id)
     },
     destroy() {
       if (relabelTimer)
         clearTimeout(relabelTimer)
-      el.removeEventListener('pointerdown', onOrbitStart, true)
-      el.removeEventListener('pointermove', onOrbitMove, true)
-      el.removeEventListener('pointerup', onOrbitEnd, true)
-      el.removeEventListener('pointercancel', onOrbitEnd, true)
-      el.removeEventListener('contextmenu', onContextMenu)
+      search?.removeEventListener('input', onSearchInput)
+      search?.removeEventListener('change', onSearchChange)
+      search?.removeEventListener('keydown', onSearchKey)
+      tablePopover?.removeEventListener('toggle', onTableToggle)
+      table?.removeEventListener('click', onTableClick)
       for (const marker of labels)
         marker.remove()
       labels = []
@@ -577,27 +714,29 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
 
 // --- What is shown, in the address ------------------------------------------
 
-/** The office and metric the address asks for, or the defaults. */
-export function readView(): { office: OfficeKey, metric: Metric } {
+/** The office, metric and county the address asks for, or the defaults. */
+export function readView(): { office: OfficeKey, metric: Metric, county: string } {
   const query = new URLSearchParams(location.search)
   const office = query.get('office')
   return {
     office: office === 'senate' || office === 'governor' || office === 'top' ? office : 'house',
     metric: query.get('by') === 'density' ? 'density' : 'votes',
+    county: query.get('county') ?? '',
   }
 }
 
 /** Keep the address in step, so a view can be linked to. The defaults are left out of it. */
-export function writeView(office: OfficeKey, metric: Metric): void {
+export function writeView(office: OfficeKey, metric: Metric, county = ''): void {
   const query = new URLSearchParams(location.search)
-  if (office === 'house')
-    query.delete('office')
-  else
-    query.set('office', office)
-  if (metric === 'votes')
-    query.delete('by')
-  else
-    query.set('by', metric)
+  const put = (key: string, value: string): void => {
+    if (value)
+      query.set(key, value)
+    else
+      query.delete(key)
+  }
+  put('office', office === 'house' ? '' : office)
+  put('by', metric === 'votes' ? '' : metric)
+  put('county', county)
   const text = query.toString()
   history.replaceState(history.state, '', `${location.pathname}${text ? `?${text}` : ''}`)
 }

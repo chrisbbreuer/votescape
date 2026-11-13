@@ -9,6 +9,8 @@
   them describes the site. --}}
 <script server>
 import { config } from '@stacksjs/config'
+import { MAP_CSS, MAP_JS } from '~/resources/assets/scripts/map-assets'
+import { dataFiles } from '~/resources/functions/assets'
 
 const appName = config.app.name || 'My App'
 
@@ -21,6 +23,12 @@ const headTitle = typeof pageTitle !== 'undefined' && pageTitle ? `${pageTitle} 
 const headDescription = typeof pageDescription !== 'undefined' && pageDescription ? pageDescription : 'How every county in every state voted in the 2026 midterm elections, as a 3D map.'
 const headPath = typeof canonicalPath !== 'undefined' && canonicalPath ? canonicalPath : '/'
 const canonicalUrl = siteUrl ? `${siteUrl}${headPath}` : ''
+
+// A page that draws the map says so with `mapPage`. Its files are then asked
+// for while the page is still being read, not once its scripts have run.
+const preloadMap = typeof mapPage !== 'undefined' && !!mapPage
+const mapFiles = preloadMap ? dataFiles() : null
+const hidden = typeof noindex !== 'undefined' && !!noindex
 </script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -29,6 +37,16 @@ const canonicalUrl = siteUrl ? `${siteUrl}${headPath}` : ''
 <title>{{ headTitle }}</title>
 <meta name="description" content="{{ headDescription }}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+@if(hidden)
+  <meta name="robots" content="noindex">
+@endif
+@if(preloadMap)
+  <link rel="stylesheet" href="{{ MAP_CSS }}" data-ts-maps-css="1">
+  <link rel="modulepreload" href="{{ MAP_JS }}">
+  <link rel="preload" as="fetch" crossorigin href="{{ mapFiles.counties }}">
+  <link rel="preload" as="fetch" crossorigin href="{{ mapFiles.states }}">
+  <link rel="preload" as="fetch" crossorigin href="{{ mapFiles.results }}">
+@endif
 @if(canonicalUrl)
   <link rel="canonical" href="{{ canonicalUrl }}">
   <meta property="og:url" content="{{ canonicalUrl }}">

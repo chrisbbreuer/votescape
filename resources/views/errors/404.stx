@@ -1,0 +1,13 @@
+@extends('default')
+@section('content')
+<script server>
+/**
+ * The page for an address that matches no view. The server looks for this
+ * route when nothing else answers, and sends it with a 404.
+ */
+const pageTitle = 'Page not found'
+const pageDescription = 'There is no page at this address on Votescape.'
+const noindex = true
+</script>
+<NotFound />
+@endsection

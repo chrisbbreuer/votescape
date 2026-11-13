@@ -10,6 +10,9 @@
   they stack: what is shown above the map, the place and the legend below. --}}
 <script server>
 import { stateByCode, STATES } from '~/resources/data/states'
+import { dataFiles } from '~/resources/functions/assets'
+
+export const files = dataFiles()
 
 export const focus = String($props.focus || '').toLowerCase()
 export const focusState = stateByCode(focus)
@@ -113,13 +116,13 @@ function chooseOffice(next: OfficeKey): void {
   office.set(next)
   handle?.setOffice(next)
   totals.set(handle?.summary() ?? null)
-  writeView(office(), metric())
+  writeView(office(), metric(), selected()?.id ?? '')
 }
 
 function chooseMetric(next: Metric): void {
   metric.set(next)
   handle?.setMetric(next)
-  writeView(office(), metric())
+  writeView(office(), metric(), selected()?.id ?? '')
 }
 
 function resetView(): void {
@@ -150,20 +153,32 @@ async function mount(): Promise<void> {
   const view = readView()
   office.set(view.office)
   metric.set(view.metric)
-  handle = await mountElectionMap('election-map', {
-    office: view.office,
-    metric: view.metric,
-    onHover: info => hovered.set(info),
-    onSelect: info => selected.set(info),
-    onExplore: () => explored.set(true),
-    onReady: ({ meta, webgl }) => {
-      hasResults.set(!!meta)
-      hasWebgl.set(webgl)
-      official.set(!!meta?.official)
-      sourceLabel.set(meta?.sourceLabel ?? '')
-      updated.set(meta?.updatedAt ? new Date(meta.updatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '')
-    },
-  })
+  try {
+    handle = await mountElectionMap('election-map', {
+      office: view.office,
+      metric: view.metric,
+      county: view.county,
+      ids: { search: 'vs-search', places: 'vs-places', popover: 'vs-states', table: 'vs-table-body' },
+      onHover: info => hovered.set(info),
+      onSelect: (info) => {
+        selected.set(info)
+        writeView(office(), metric(), info?.id ?? '')
+      },
+      onExplore: () => explored.set(true),
+      onReady: ({ meta, webgl }) => {
+        hasResults.set(!!meta)
+        hasWebgl.set(webgl)
+        official.set(!!meta?.official)
+        sourceLabel.set(meta?.sourceLabel ?? '')
+        updated.set(meta?.updatedAt ? new Date(meta.updatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '')
+      },
+    })
+  }
+  catch (error) {
+    // Whatever went wrong, say so: the alternative is a loader that never ends.
+    console.error('[votescape] the map could not be drawn:', error)
+    handle = null
+  }
   failed.set(!handle)
   totals.set(handle?.summary() ?? null)
   loaded.set(true)
@@ -183,7 +198,7 @@ onDestroy(() => {
 <div class="vs-stage">
   <h1 class="sr-only">{{ heading }}</h1>
 
-  <div id="election-map" data-stx-ignore data-focus="{{ focus }}" class="vs-map" role="application" aria-label="3D map of results by county. Drag to move, scroll to zoom."></div>
+  <div id="election-map" data-stx-ignore data-focus="{{ focus }}" data-counties="{{ files.counties }}" data-states="{{ files.states }}" data-results="{{ files.results }}" class="vs-map" role="application" aria-label="3D map of results by county. Drag to move, scroll to zoom."></div>
 
   {{-- Over the map until it is drawn. --}}
   <div class="vs-veil" :class="loaded() ? 'is-done' : ''" aria-hidden="true">
@@ -192,7 +207,7 @@ onDestroy(() => {
       <rect x="19.5" y="6" width="9" height="36" rx="2" fill="#e8dce4" />
       <rect x="33" y="15" width="9" height="27" rx="2" fill="#ff6f66" />
     </svg>
-    <p>Raising 3,154 counties</p>
+    <p>Raising 3,153 counties</p>
   </div>
 
   {{-- Across the top: where you are, what is shown, and where else to go. --}}
@@ -217,23 +232,30 @@ onDestroy(() => {
     </div>
 
     <div class="vs-offices vs-seg" role="group" aria-label="Office">
-      <button type="button" :class="office() === 'house' ? 'is-on' : ''" :aria-pressed="office() === 'house' ? 'true' : 'false'" @click="chooseOffice('house')">House</button>
-      <button type="button" :class="office() === 'senate' ? 'is-on' : ''" :aria-pressed="office() === 'senate' ? 'true' : 'false'" @click="chooseOffice('senate')">Senate</button>
-      <button type="button" :class="office() === 'governor' ? 'is-on' : ''" :aria-pressed="office() === 'governor' ? 'true' : 'false'" @click="chooseOffice('governor')">Governor</button>
-      <button type="button" :class="office() === 'top' ? 'is-on' : ''" :aria-pressed="office() === 'top' ? 'true' : 'false'" @click="chooseOffice('top')">Top of ticket</button>
+      <button type="button" :class="loaded() && office() === 'house' ? 'is-on' : ''" :aria-pressed="office() === 'house' ? 'true' : 'false'" @click="chooseOffice('house')">House</button>
+      <button type="button" :class="loaded() && office() === 'senate' ? 'is-on' : ''" :aria-pressed="office() === 'senate' ? 'true' : 'false'" @click="chooseOffice('senate')">Senate</button>
+      <button type="button" :class="loaded() && office() === 'governor' ? 'is-on' : ''" :aria-pressed="office() === 'governor' ? 'true' : 'false'" @click="chooseOffice('governor')">Governor</button>
+      <button type="button" :class="loaded() && office() === 'top' ? 'is-on' : ''" :aria-pressed="office() === 'top' ? 'true' : 'false'" @click="chooseOffice('top')">Top of ticket</button>
     </div>
 
     <div class="vs-top-end">
       <button type="button" class="vs-btn" popovertarget="vs-states">
-        <span>States</span>
+        <span>Places</span>
         <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </button>
+      <button type="button" class="vs-btn vs-btn-quiet" popovertarget="vs-table">Table</button>
       <a class="vs-btn vs-btn-quiet" href="/about">About</a>
     </div>
   </header>
 
   {{-- Every state, as links: a reader picks one, and a crawler finds them all. --}}
-  <nav id="vs-states" popover class="vs-states" aria-label="States">
+  <nav id="vs-states" popover class="vs-states" aria-label="Places">
+    <label class="vs-states-title" for="vs-search">Find a county</label>
+    <div class="vs-search">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5" /><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+      <input id="vs-search" type="search" list="vs-places" placeholder="Harris County, Texas" autocomplete="off" spellcheck="false" enterkeyhint="go">
+      <datalist id="vs-places" data-stx-ignore></datalist>
+    </div>
     <p class="vs-states-title">Go to a state</p>
     <ul>
       <li><a href="/" class="{{ focus ? '' : 'is-here' }}">United States</a></li>
@@ -242,6 +264,24 @@ onDestroy(() => {
       @endforeach
     </ul>
   </nav>
+
+  {{-- The same numbers as rows, for reading and for a screen reader. --}}
+  <section id="vs-table" popover class="vs-table" aria-label="Results as a table">
+    <div class="vs-table-head">
+      <p class="vs-states-title">Results as a table</p>
+      <button type="button" class="vs-close" popovertarget="vs-table" popovertargetaction="hide" aria-label="Close">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+      </button>
+    </div>
+    <div id="vs-table-body" data-stx-ignore class="vs-table-body"><p>Loading the results.</p></div>
+  </section>
+
+  <noscript>
+    <div class="vs-noscript">
+      <h2>This map needs JavaScript</h2>
+      <p>Votescape draws every county in your browser, so it cannot show anything with JavaScript turned off. The <a href="/about">about page</a> explains what the map shows.</p>
+    </div>
+  </noscript>
 
   {{-- The totals for what is shown. --}}
   <section class="vs-panel vs-totals" :if="loaded() && hasResults()" aria-live="polite">
@@ -694,6 +734,157 @@ onDestroy(() => {
 .vs-states a.is-here {
   color: #0b0f17;
   background: #f1f4f9;
+}
+
+.vs-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 0 10px;
+  color: var(--vs-muted);
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid var(--vs-line);
+  border-radius: 10px;
+}
+
+.vs-search:focus-within {
+  border-color: #8ab4ff;
+}
+
+.vs-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 0;
+  color: var(--vs-text);
+  font: inherit;
+  font-size: 16px;
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.vs-search input::placeholder {
+  color: var(--vs-faint);
+}
+
+label.vs-states-title {
+  display: block;
+}
+
+/* --- The table of results --- */
+
+.vs-table {
+  position: fixed;
+  inset: 62px var(--vs-gap) auto auto;
+  width: min(560px, calc(100vw - 2 * var(--vs-gap)));
+  max-height: min(82vh, 720px);
+  margin: 0;
+  padding: 16px;
+  overflow-y: auto;
+  color: var(--vs-text);
+  background: rgba(14, 19, 30, 0.97);
+  border: 1px solid var(--vs-line-strong);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.vs-table::backdrop {
+  background: rgba(5, 8, 13, 0.35);
+}
+
+.vs-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vs-table-body table {
+  width: 100%;
+  font-size: 13.5px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.vs-table-body caption {
+  padding-bottom: 8px;
+  font-weight: 650;
+  font-size: 16px;
+  text-align: left;
+}
+
+.vs-table-body th,
+.vs-table-body td {
+  padding: 6px 8px;
+  font-weight: 400;
+  text-align: left;
+  border-bottom: 1px solid var(--vs-line);
+}
+
+.vs-table-body thead th {
+  position: sticky;
+  top: -16px;
+  color: var(--vs-muted);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: rgb(14, 19, 30);
+}
+
+.vs-table-body .is-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.vs-table-body .is-dem {
+  color: var(--vs-dem);
+  font-weight: 650;
+}
+
+.vs-table-body .is-rep {
+  color: var(--vs-rep);
+  font-weight: 650;
+}
+
+.vs-table-body a,
+.vs-table-body th button {
+  padding: 0;
+  color: var(--vs-text);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--vs-line-strong);
+  text-underline-offset: 3px;
+  background: none;
+  border: 0;
+}
+
+.vs-table-body a:hover,
+.vs-table-body th button:hover {
+  text-decoration-color: currentColor;
+}
+
+.vs-noscript {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 950;
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  background: rgb(14, 19, 30);
+  border: 1px solid var(--vs-line-strong);
+  border-radius: 16px;
+  transform: translate(-50%, -50%);
+}
+
+.vs-noscript p {
+  margin-top: 8px;
+  color: #c6cedb;
+}
+
+.vs-noscript a {
+  color: #8ab4ff;
 }
 
 /* --- Panels --- */
@@ -1178,6 +1369,11 @@ onDestroy(() => {
     padding: 5px 7px;
   }
 
+  /* A state's page has the way back beside the mark, and no room for the name. */
+  .vs-top-start:has(.vs-crumb) .vs-brand span {
+    display: none;
+  }
+
   .vs-panel {
     width: auto;
     padding: 12px 14px;
@@ -1271,9 +1467,18 @@ onDestroy(() => {
     font-size: 12px;
   }
 
-  .vs-states {
+  .vs-states,
+  .vs-table {
     inset: 56px var(--vs-gap) auto var(--vs-gap);
     width: auto;
+  }
+
+  .vs-btn {
+    padding: 7px 9px;
+  }
+
+  .vs-top-end {
+    gap: 2px;
   }
 
   .vs-states ul {

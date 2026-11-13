@@ -14,6 +14,5 @@ import { defineEvents } from '@stacksjs/events'
  */
 export default defineEvents({
   // eventName: ['Listener1', 'Listener2'] -> listeners resolve from ./app/Listeners/*, then ./app/Actions/*
-  'user:registered': ['SendWelcomeEmail'],
-  'user:created': ['NotifyUser'],
+  // No events yet: the site has no accounts and sends nothing.
 })

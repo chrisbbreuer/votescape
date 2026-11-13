@@ -57,15 +57,27 @@ state's certification. The page says when its numbers were last updated.
 ## Deploying
 
 votescape.org runs on the shared `stacks` server, with its DNS at Porkbun
-(`config/cloud.ts`). Deploy from a checkout that has the results built:
+(`config/cloud.ts`). One command fetches the results again, checks the
+checkout is fit to ship, deploys it, and then asks the live site for every
+page and file the map needs:
 
 ```bash
-bun run data:results --refresh
-./buddy deploy --prod --yes
+bun run deploy
 ```
 
-The deploy needs `PORKBUN_API_KEY` and `PORKBUN_SECRET_KEY` in the environment
-to publish DNS, and `HCLOUD_TOKEN` the first time, to find the server.
+The steps on their own are `bun run check:release`, `./buddy deploy --prod --yes`
+and `bun run smoke` (which takes an address: `bun run smoke http://localhost:3290`).
+
+The deploy publishes DNS only when `PORKBUN_API_KEY` and `PORKBUN_SECRET_KEY`
+are in the environment, and skips it otherwise, which is fine once the records
+exist. It needed `HCLOUD_TOKEN` once, to find the server; `storage/cloud` on
+the machine that first deployed remembers it.
+
+Between deploys the server keeps the numbers current itself: `app/Scheduler.ts`
+runs the results build every six hours and writes over the file the map reads.
+
+The GitHub deploy workflow does nothing until its secrets are set, and a
+checkout in CI has no results to ship, so deploys are run from a machine.
 
 ## How the map is put together
 

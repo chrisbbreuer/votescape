@@ -7,6 +7,7 @@
  */
 const pageTitle = '2026 midterms in 3D'
 const pageDescription = 'How every county in every state voted in the 2026 midterm elections, as a 3D map: height is votes cast, colour is the margin.'
+const mapPage = true
 </script>
 <ElectionMap />
 @endsection

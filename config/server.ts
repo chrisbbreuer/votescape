@@ -1,4 +1,5 @@
 import type { ServerConfig } from '@stacksjs/types'
+import process from 'node:process'
 
 /**
  * **Server Configuration**
@@ -9,6 +10,25 @@ import type { ServerConfig } from '@stacksjs/types'
  * will be provided. In case you have any questions, feel free to reach out via
  * Discord or GitHub Discussions.
  */
+const FOR_GOOD = 'public, max-age=31536000, immutable'
+
+const CONTENT_SECURITY_POLICY = [
+  'default-src \'self\'',
+  // stx compiles a template's `:if` and `:class` expressions in the browser,
+  // which is `unsafe-eval`, and ships each page's own script inline. What
+  // this still refuses is script from anywhere but this site.
+  'script-src \'self\' \'unsafe-inline\' \'unsafe-eval\'',
+  'style-src \'self\' \'unsafe-inline\'',
+  'img-src \'self\' data: blob:',
+  'font-src \'self\' data:',
+  'connect-src \'self\'',
+  'worker-src \'self\' blob:',
+  'object-src \'none\'',
+  'base-uri \'self\'',
+  'form-action \'self\'',
+  'frame-ancestors \'self\'',
+].join('; ')
+
 export default {
   // Opt in after publishing the native Request model and migrating its table.
   captureRequests: false,
@@ -137,5 +157,27 @@ export default {
    */
   security: {
     embeddable: [],
+  },
+  // Headers by path. A later, narrower entry wins over `/*` for the same
+  // header.
+  headers: {
+    '/*': {
+      // HTTPS only, for a year: the site has no plain-HTTP use. Only where
+      // it is deployed, or a laptop's own host name is pinned to HTTPS too.
+      ...(process.env.APP_ENV === 'production' && { 'Strict-Transport-Security': 'max-age=31536000; includeSubDomains' }),
+      // Everything the pages load is the site's own. Inline script and style
+      // are how stx ships a page's own behaviour and how the map places its
+      // labels; `blob:` is the map library's workers and textures.
+      'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+    },
+    // The page names these with a version in the address (`?v=`), which
+    // changes when the file does, so a copy can be kept for good.
+    '/js/*': { 'Cache-Control': FOR_GOOD },
+    '/css/*': { 'Cache-Control': FOR_GOOD },
+    '/data/geo/*': { 'Cache-Control': FOR_GOOD },
+    '/data/results/*': { 'Cache-Control': FOR_GOOD },
+    '/favicon.svg': { 'Cache-Control': 'public, max-age=86400' },
+    '/images/*': { 'Cache-Control': 'public, max-age=86400' },
   },
 } satisfies ServerConfig

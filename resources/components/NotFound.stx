@@ -1,0 +1,96 @@
+{{-- What a reader sees where there is no page: an unknown address, or a
+  state's page for a code that names no state. The page that uses it also
+  answers 404, so a crawler does not take it for a real page. --}}
+<script server>
+export const lost = String($props.what || 'That page')
+</script>
+
+<div class="vn-page">
+  <div class="vn-card">
+    <svg viewBox="0 0 48 48" width="44" height="44" fill="none" aria-hidden="true">
+      <rect x="6" y="22" width="9" height="20" rx="2" fill="#5b9dff" />
+      <rect x="19.5" y="38" width="9" height="4" rx="2" fill="#e8dce4" />
+      <rect x="33" y="15" width="9" height="27" rx="2" fill="#ff6f66" />
+    </svg>
+    <p class="vn-eyebrow">404</p>
+    <h1>Nothing stands here</h1>
+    <p class="vn-text">{{ lost }} is not on the map. Every state and county is, so try from the top.</p>
+    <p class="vn-actions">
+      <a class="vn-button" href="/">Open the map</a>
+      <a class="vn-link" href="/about">About Votescape</a>
+    </p>
+  </div>
+</div>
+
+<style>
+.vn-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 24px;
+  color: #e9edf5;
+  background: radial-gradient(900px 500px at 50% 0%, #17203a 0%, #0b0f17 65%);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.vn-card {
+  max-width: 440px;
+}
+
+.vn-eyebrow {
+  margin: 18px 0 0;
+  color: #9aa5b8;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.vn-card h1 {
+  margin: 6px 0 0;
+  font-weight: 700;
+  font-size: clamp(30px, 6vw, 42px);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.vn-text {
+  margin: 14px 0 0;
+  color: #c6cedb;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.vn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+  margin: 26px 0 0;
+}
+
+.vn-button {
+  padding: 11px 18px;
+  color: #0b0f17;
+  font-weight: 650;
+  text-decoration: none;
+  background: #f1f4f9;
+  border-radius: 12px;
+}
+
+.vn-button:hover {
+  background: #fff;
+}
+
+.vn-link {
+  color: #8ab4ff;
+  text-underline-offset: 3px;
+}
+
+.vn-page :focus-visible {
+  outline: 2px solid #8ab4ff;
+  outline-offset: 2px;
+}
+</style>

@@ -76,18 +76,21 @@ const canonicalPath = '/about'
         <li><b>A missing major party.</b> In a statewide race with no Democrat or no Republican, the leading candidate against the other party takes that side, and is named.</li>
         <li><b>Ranked-choice voting</b> in Alaska and Maine is shown by first choices.</li>
         <li><b>Louisiana</b> voted in all-party primaries. Each side is its party's total.</li>
+        <li><b>Washington, D.C.</b> lies flat. It has no senator, no governor and no voting seat in the House.</li>
+        <li><b>Kalawao County, Hawaii</b>, with about eighty residents, is counted with Maui County and drawn as part of it.</li>
       </ul>
     </section>
 
     <section>
       <h2>The numbers</h2>
       <p>These are unofficial results, and they will change. Some races are not called, a few go to runoffs, and no state has certified its count. The map says when its numbers were last updated, in the legend.</p>
+      <p>Every number on the map is also in a table: choose Table at the top of the map for each state, or each county in a state, as rows you can read or have read to you. Places finds any county by name.</p>
       <p>The shapes are the U.S. Census Bureau's 2024 cartographic boundary files, laid out in the Albers USA projection, with Alaska and Hawaii moved and resized to fit.</p>
     </section>
 
     <section>
       <h2>How it is made</h2>
-      <p>The map is drawn in your browser by <a href="https://github.com/stacksjs/ts-maps">ts-maps</a>, an open source mapping library, as 3,154 extruded shapes over a single layer of data. The site is built with <a href="https://stacksjs.com">Stacks</a>.</p>
+      <p>The map is drawn in your browser by <a href="https://github.com/stacksjs/ts-maps">ts-maps</a>, an open source mapping library, as 3,153 extruded shapes over a single layer of data. The site is built with <a href="https://stacksjs.com">Stacks</a>.</p>
     </section>
 
     <p class="va-cta"><a class="va-button" href="/">Open the map</a></p>

@@ -23,7 +23,9 @@
     "data:results": "bun scripts/build-results.ts",
     "data": "bun run data:geo && bun run data:results",
     "prod": "./buddy build",
-    "deploy": "./buddy deploy",
+    "check:release": "bun scripts/check-release.ts",
+    "smoke": "bun scripts/smoke.ts",
+    "deploy": "bun scripts/build-results.ts --refresh && bun scripts/check-release.ts && ./buddy deploy --prod --yes && bun scripts/smoke.ts",
     "lint": "./buddy lint",
     "lint:fix": "./buddy lint:fix",
     "format": "./buddy format",
@@ -66,7 +68,7 @@
     "@stacksjs/path": "^0.75.571",
     "@stacksjs/stx": "0.2.864",
     "stacks": "^0.75.571",
-    "ts-maps": "^0.5.9"
+    "ts-maps": "^0.5.10"
   },
   "workspaces": [
     "storage/framework",

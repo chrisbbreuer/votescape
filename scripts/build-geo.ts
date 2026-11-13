@@ -13,7 +13,7 @@
  *    how Alaska reports its results. Ids are `02HD01` to `02HD40`.
  * 2. Connecticut is drawn by its nine planning regions (the county
  *    equivalents since 2022), and a town-to-region table is written to
- *    `storage/data/geo/connecticut-towns.json` for the results build, because
+ *    `scripts/sources/connecticut-towns.json` for the results build, because
  *    results arrive by town.
  * 3. Every coordinate is projected to the Albers USA layout (Alaska and
  *    Hawaii inset) and then written as a made-up longitude and latitude in a
@@ -272,14 +272,28 @@ for (const feature of await read(townsZip, '-drop geometry')) {
 const fail = (message: string): never => {
   throw new Error(`[data:geo] ${message}`)
 }
+// Kalawao County, on Molokai, has about eighty residents and no count of its
+// own: its votes are reported with Maui County's, which is the rest of the
+// island. Drawn apart it would be the one county in the country with nothing
+// to show, so its land joins Maui's.
+const kalawao = counties.findIndex(c => c.id === '15005')
+const maui = counties.find(c => c.id === '15009')
+if (kalawao < 0 || !maui)
+  fail('expected Kalawao (15005) and Maui (15009) counties')
+const parts = (g: { type: string, coordinates: any }): any[] => (g.type === 'Polygon' ? [g.coordinates] : g.coordinates)
+maui.geometry = { type: 'MultiPolygon', coordinates: [...parts(maui.geometry), ...parts(counties[kalawao].geometry)] }
+maui.properties.a = Math.round((maui.properties.a + counties[kalawao].properties.a) * 100) / 100
+counties.splice(kalawao, 1)
+
 if (skipped.length)
   fail(`could not project: ${skipped.join(', ')}`)
 const ids = new Set(counties.map(c => c.id))
 if (ids.size !== counties.length)
   fail('duplicate county ids')
-// 3,144 counties and equivalents, less Alaska's 30 boroughs, plus its 40 districts.
-if (counties.length !== 3144 - 30 + 40)
-  fail(`expected 3154 units, have ${counties.length}`)
+// 3,144 counties and equivalents, less Alaska's 30 boroughs, plus its 40
+// districts, less Kalawao.
+if (counties.length !== 3144 - 30 + 40 - 1)
+  fail(`expected 3153 units, have ${counties.length}`)
 if (states.length !== 51)
   fail(`expected 51 states, have ${states.length}`)
 if (counties.filter(c => c.properties.st === '09').length !== 9)
@@ -305,5 +319,7 @@ const write = async (name: string, value: unknown): Promise<void> => {
 await write('counties.json', { type: 'FeatureCollection', features: counties })
 await write('states.json', { type: 'FeatureCollection', features: states })
 // Not for the browser: the results build reads it to put towns in regions.
-await Bun.write(join(RAW, 'connecticut-towns.json'), JSON.stringify(connecticutTowns))
+// Beside the sources that read it, and committed: the results build runs on
+// the server too, where none of the Census downloads are.
+await Bun.write(join(ROOT, 'scripts/sources/connecticut-towns.json'), JSON.stringify(connecticutTowns))
 console.error(`[data:geo] ${counties.length} units, ${vertices} vertices, ${states.length} states`)

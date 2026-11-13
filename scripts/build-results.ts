@@ -15,8 +15,9 @@
 
 import type { Contest } from './sources/types'
 import { existsSync } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, rename } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import process from 'node:process'
 import { rollup } from './lib/rollup'
 import { nyt } from './sources/nyt'
 
@@ -27,7 +28,7 @@ const OUT = join(ROOT, 'public/data/results')
 const refresh = Bun.argv.includes('--refresh')
 
 const countiesPath = join(ROOT, 'public/data/geo/counties.json')
-const townsPath = join(ROOT, 'storage/data/geo/connecticut-towns.json')
+const townsPath = join(ROOT, 'scripts/sources/connecticut-towns.json')
 if (!existsSync(countiesPath) || !existsSync(townsPath))
   throw new Error('[data:results] the map\'s geometry is not built. Run `bun run data:geo` first.')
 
@@ -78,5 +79,9 @@ const file = {
 
 await mkdir(OUT, { recursive: true })
 const text = JSON.stringify(file)
-await Bun.write(join(OUT, '2026.json'), text)
+// Written beside the file and moved over it, so a page asking for the
+// results while they are rebuilt gets the old ones whole, never half of the new.
+const pending = join(OUT, `2026.json.${process.pid}.tmp`)
+await Bun.write(pending, text)
+await rename(pending, join(OUT, '2026.json'))
 console.error(`[data:results] 2026.json ${Math.round(text.length / 1024)} KB`)
