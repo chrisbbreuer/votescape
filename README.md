@@ -9,22 +9,26 @@ A [Stacks](https://stacksjs.com) application, drawn with
 
 ## Getting started
 
-The map needs three things built before it has anything to show. None of them
-is built by `./buddy dev`.
+The county and state shapes and the map library are committed. The results
+are not, so a fresh checkout builds them before the map has numbers to show.
 
 ```bash
-# 1. The map library, as a chunk in public/js. The 3D map uses ts-maps
-#    features newer than 0.5.8, so until a release has them, build from a
-#    checkout of ts-maps.
-TS_MAPS_SOURCE=~/Code/Libraries/ts-maps bun run build:maps
-
-# 2. County and state shapes, from the Census Bureau.
-bun run data:geo
-
-# 3. The results. See "The results are not ours to publish" below.
+# The results. See "The results are not ours to publish" below.
 bun run data:results
 
 ./buddy dev
+```
+
+Two more scripts rebuild what is committed, when its source changes:
+
+```bash
+# The map library, as a chunk in public/js, from the installed ts-maps
+# (0.5.9 or newer). Run it after upgrading ts-maps. To try an unreleased
+# ts-maps, point TS_MAPS_SOURCE at a checkout of it.
+bun run build:maps
+
+# County and state shapes, from the Census Bureau.
+bun run data:geo
 ```
 
 `./buddy doctor` checks your setup if anything does not start.

@@ -66,7 +66,7 @@
     "@stacksjs/path": "^0.75.571",
     "@stacksjs/stx": "0.2.864",
     "stacks": "^0.75.571",
-    "ts-maps": "^0.5.8"
+    "ts-maps": "^0.5.9"
   },
   "workspaces": [
     "storage/framework",

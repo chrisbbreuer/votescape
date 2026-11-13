@@ -10,7 +10,7 @@
         "@stacksjs/path": "^0.75.571",
         "@stacksjs/stx": "0.2.864",
         "stacks": "^0.75.571",
-        "ts-maps": "^0.5.8",
+        "ts-maps": "^0.5.9",
       },
       "devDependencies": {
         "@actions/expressions": "0.3.61",
@@ -838,7 +838,7 @@
 
     "ts-jpeg": ["ts-jpeg@0.3.6", "", {}, "sha512-BJB8NzbRx/vWH97iA17D065J/LaaJfdgoSvspV+EcpPHTN/aXvWhUf9LNhSclu0kd4SSoBecD9qIiFAnjwXT0g=="],
 
-    "ts-maps": ["ts-maps@0.5.8", "", {}, "sha512-BmD0fr/1+PW79NLMaqQBej+MGW3C0vnPwuZBxtpRihO0lmOhj5l4Qe+6EPnVSFkmn/+X/gMJe94qWd6H5OEblA=="],
+    "ts-maps": ["ts-maps@0.5.9", "", {}, "sha512-GY/PjioSo3JxqePbTy5llm/+0F0Hpg1Vth1tfNpj/eigvs79C6fEppb+4u3vJhJk0+XZbEyi85tqtnI+94AXtw=="],
 
     "ts-medium-editor": ["ts-medium-editor@0.2.0", "", {}, "sha512-XR4Orpxm1v9OfP6dCMImYpPaqdJUdoRl3laUUiPB9dR9WJHSFbWZmHCBdPG3uiQiaQljeSssKQTZTUcfQnsj3g=="],
 

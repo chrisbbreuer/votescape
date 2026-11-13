@@ -215,11 +215,3 @@ docs/erd.md
 # `bun run data` rebuilds both.
 /storage/data
 /public/data/results
-
-# The map library's browser chunk and stylesheet, vendored by
-# `bun run build:maps`. Built from a ts-maps checkout for now, because the 3D
-# map needs features no release has yet, and a chunk built from a working tree
-# is not one anyone else can reproduce. Commit them, as other apps do, once
-# they build from the locked package.
-/public/js/ts-maps.mjs
-/public/css/ts-maps.css
