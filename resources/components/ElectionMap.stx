@@ -1,0 +1,221 @@
+{{-- The map and everything laid over it: which office is shown, the totals,
+  the county under the pointer, the legend, and the links to each state.
+
+  Used by the home page for the whole country and by a state's page for one
+  state, which passes that state's postal code as focus. The map itself is
+  drawn by resources/composables/useElectionMap.ts into the element marked
+  data-stx-ignore, which stx leaves alone. --}}
+<script server>
+import { stateByCode, STATES } from '~/resources/data/states'
+
+export const focus = String($props.focus || '').toLowerCase()
+export const focusState = stateByCode(focus)
+export const focusName = focusState ? focusState.name : ''
+export const stateLinks = STATES
+</script>
+
+<script client>
+import type { CountyInfo, ElectionMapHandle, Summary } from '../composables/useElectionMap'
+import type { Metric, OfficeKey } from '../functions/election'
+import { mountElectionMap, readView, runWhenMapReady, writeView } from '../composables/useElectionMap'
+import { formatMargin, formatNumber } from '../functions/election'
+
+const office = state<OfficeKey>('house')
+const metric = state<Metric>('votes')
+const hovered = state<CountyInfo | null>(null)
+const selected = state<CountyInfo | null>(null)
+const totals = state<Summary | null>(null)
+const loaded = state(false)
+const hasResults = state(true)
+const hasWebgl = state(true)
+const official = state(false)
+const updated = state('')
+const sourceLabel = state('')
+
+let handle: ElectionMapHandle | null = null
+let cancel: (() => void) | null = null
+
+// The county shown in the card: the one under the pointer, else the one clicked.
+const county = derived(() => hovered() ?? selected())
+const countyName = derived(() => county()?.name ?? '')
+const countyState = derived(() => county()?.state ?? '')
+const countyLink = derived(() => `/state/${county()?.code ?? ''}`)
+const countyOffice = derived(() => county()?.office ?? '')
+const countyHasRace = derived(() => county()?.hasRace ?? false)
+const countyDem = derived(() => `${county()?.demName ?? ''}: ${formatNumber(county()?.dem ?? 0)}`)
+const countyRep = derived(() => `${county()?.repName ?? ''}: ${formatNumber(county()?.rep ?? 0)}`)
+const countyTotal = derived(() => `${formatNumber(county()?.total ?? 0)} votes`)
+const countyMargin = derived(() => formatMargin(county()?.margin))
+const countyLeansDem = derived(() => (county()?.margin ?? 0) > 0)
+const countyCounted = derived(() => (county()?.pct === null || county()?.pct === undefined ? '' : `${county()?.pct}% of expected vote counted`))
+const countyNotes = derived(() => (county()?.notes ?? []).join(' '))
+
+const totalsTitle = derived(() => totals()?.title ?? '')
+const totalsOffice = derived(() => totals()?.office ?? '')
+const totalsHasRace = derived(() => totals()?.hasRace ?? false)
+const totalsDem = derived(() => `${totals()?.demName ?? ''}: ${formatNumber(totals()?.dem ?? 0)}`)
+const totalsRep = derived(() => `${totals()?.repName ?? ''}: ${formatNumber(totals()?.rep ?? 0)}`)
+const totalsVotes = derived(() => `${formatNumber(totals()?.total ?? 0)} votes`)
+const totalsMargin = derived(() => formatMargin(totals()?.margin))
+const totalsLeansDem = derived(() => (totals()?.margin ?? 0) > 0)
+const totalsStatus = derived(() => totals()?.status ?? '')
+const totalsNotes = derived(() => (totals()?.notes ?? []).join(' '))
+const sourceLine = derived(() => `${official() ? 'Certified results' : 'Unofficial results'}${updated() ? `, updated ${updated()}` : ''}${sourceLabel() ? `. Source: ${sourceLabel()}` : ''}`)
+
+const heightNote = derived(() => (metric() === 'density' ? 'Height is votes per square mile, on a square-root scale.' : 'Height is votes cast.'))
+
+function chooseOffice(next: OfficeKey): void {
+  office.set(next)
+  handle?.setOffice(next)
+  totals.set(handle?.summary() ?? null)
+  writeView(office(), metric())
+}
+
+function chooseMetric(next: Metric): void {
+  metric.set(next)
+  handle?.setMetric(next)
+  writeView(office(), metric())
+}
+
+function resetView(): void {
+  handle?.resetView()
+}
+
+async function mount(): Promise<void> {
+  const view = readView()
+  office.set(view.office)
+  metric.set(view.metric)
+  handle = await mountElectionMap('election-map', {
+    office: view.office,
+    metric: view.metric,
+    onHover: info => hovered.set(info),
+    onSelect: info => selected.set(info),
+    onReady: ({ meta, webgl }) => {
+      hasResults.set(!!meta)
+      hasWebgl.set(webgl)
+      official.set(!!meta?.official)
+      sourceLabel.set(meta?.sourceLabel ?? '')
+      updated.set(meta?.updatedAt ? new Date(meta.updatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '')
+    },
+  })
+  totals.set(handle?.summary() ?? null)
+  loaded.set(true)
+}
+
+onMount(() => {
+  cancel = runWhenMapReady('election-map', mount)
+})
+
+onDestroy(() => {
+  cancel?.()
+  handle?.destroy()
+  handle = null
+})
+</script>
+
+<div class="overflow-hidden relative w-full text-white vs-stage">
+  <div id="election-map" data-stx-ignore data-focus="{{ focus }}" class="absolute inset-0"></div>
+
+  {{-- Across the top: where you are, and what is shown. --}}
+  <header class="flex absolute inset-x-0 top-0 z-[1000] flex-wrap gap-3 items-start justify-between p-4 pointer-events-none">
+    <div class="pointer-events-auto">
+      @if(focusName)
+        <a href="/" class="text-neutral-400 text-sm hover:text-white">All states</a>
+        <h1 class="font-semibold text-2xl tracking-tight">{{ focusName }}</h1>
+      @else
+        <h1 class="font-semibold text-2xl tracking-tight">Votescape</h1>
+      @endif
+      <p class="text-neutral-400 text-sm">The 2026 midterms, county by county. {{ heightNote() }}</p>
+    </div>
+
+    <div class="flex flex-col gap-2 items-end pointer-events-auto">
+      <div class="flex gap-1 p-1 bg-neutral-900/80 border border-neutral-700 rounded-lg" role="group" aria-label="Office">
+        <button type="button" class="px-3 py-1.5 font-medium text-sm rounded-md" :class="office() === 'house' ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:text-white'" :aria-pressed="office() === 'house' ? 'true' : 'false'" @click="chooseOffice('house')">U.S. House</button>
+        <button type="button" class="px-3 py-1.5 font-medium text-sm rounded-md" :class="office() === 'senate' ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:text-white'" :aria-pressed="office() === 'senate' ? 'true' : 'false'" @click="chooseOffice('senate')">Senate</button>
+        <button type="button" class="px-3 py-1.5 font-medium text-sm rounded-md" :class="office() === 'governor' ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:text-white'" :aria-pressed="office() === 'governor' ? 'true' : 'false'" @click="chooseOffice('governor')">Governor</button>
+        <button type="button" class="px-3 py-1.5 font-medium text-sm rounded-md" :class="office() === 'top' ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:text-white'" :aria-pressed="office() === 'top' ? 'true' : 'false'" @click="chooseOffice('top')">Top of ticket</button>
+      </div>
+      <div class="flex gap-2 items-center">
+        <div class="flex gap-1 p-1 bg-neutral-900/80 border border-neutral-700 rounded-lg" role="group" aria-label="Height">
+          <button type="button" class="px-2.5 py-1 text-xs rounded-md" :class="metric() === 'votes' ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:text-white'" :aria-pressed="metric() === 'votes' ? 'true' : 'false'" @click="chooseMetric('votes')">Total votes</button>
+          <button type="button" class="px-2.5 py-1 text-xs rounded-md" :class="metric() === 'density' ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:text-white'" :aria-pressed="metric() === 'density' ? 'true' : 'false'" @click="chooseMetric('density')">Votes per sq mi</button>
+        </div>
+        <button type="button" class="px-2.5 py-1.5 text-neutral-300 text-xs hover:text-white bg-neutral-900/80 border border-neutral-700 rounded-lg" @click="resetView()">Reset view</button>
+      </div>
+    </div>
+  </header>
+
+  {{-- Top left, under the title: the totals for what is shown. --}}
+  <section class="absolute left-4 top-28 z-[1000] p-4 max-w-[80vw] w-72 bg-neutral-900/85 border border-neutral-700 rounded-xl" :if="loaded() && hasResults()" aria-live="polite">
+    <p class="text-neutral-400 text-xs tracking-wide uppercase">{{ totalsOffice() }}</p>
+    <h2 class="font-semibold text-lg">{{ totalsTitle() }}</h2>
+    <div :if="totalsHasRace()">
+      <p class="mt-2 font-semibold text-2xl" :class="totalsLeansDem() ? 'text-blue-400' : 'text-red-400'">{{ totalsMargin() }}</p>
+      <p class="mt-2 text-blue-300 text-sm">{{ totalsDem() }}</p>
+      <p class="text-red-300 text-sm">{{ totalsRep() }}</p>
+      <p class="text-neutral-400 text-sm">{{ totalsVotes() }}</p>
+      <p class="mt-2 text-neutral-300 text-sm">{{ totalsStatus() }}</p>
+      <p class="mt-2 text-neutral-400 text-xs" :if="totalsNotes()">{{ totalsNotes() }}</p>
+    </div>
+    <p class="mt-2 text-neutral-400 text-sm" :if="!totalsHasRace()">This office was not on the ballot here in 2026.</p>
+  </section>
+
+  <section class="absolute left-4 top-28 z-[1000] p-4 max-w-[80vw] w-80 bg-neutral-900/85 border border-neutral-700 rounded-xl" :if="loaded() && !hasResults()">
+    <h2 class="font-semibold">No results yet</h2>
+    <p class="mt-2 text-neutral-300 text-sm">The map is drawn, but the results file has not been built. Run <code class="px-1 bg-neutral-800 rounded">bun run data:results</code> and reload.</p>
+  </section>
+
+  {{-- Bottom left: the county under the pointer, or the one clicked. --}}
+  <section class="absolute bottom-4 left-4 z-[1000] p-4 max-w-[80vw] w-80 bg-neutral-900/90 border border-neutral-700 rounded-xl" :if="county()" aria-live="polite">
+    <p class="text-neutral-400 text-xs tracking-wide uppercase">{{ countyOffice() }}</p>
+    <h2 class="font-semibold text-lg">{{ countyName() }}</h2>
+    <a class="text-neutral-400 text-sm underline underline-offset-2 hover:text-white" :href="countyLink()">{{ countyState() }}</a>
+    <div :if="countyHasRace()">
+      <p class="mt-2 font-semibold text-xl" :class="countyLeansDem() ? 'text-blue-400' : 'text-red-400'" :if="countyMargin()">{{ countyMargin() }}</p>
+      <p class="mt-2 text-blue-300 text-sm">{{ countyDem() }}</p>
+      <p class="text-red-300 text-sm">{{ countyRep() }}</p>
+      <p class="text-neutral-400 text-sm">{{ countyTotal() }}</p>
+      <p class="text-neutral-500 text-xs">{{ countyCounted() }}</p>
+      <p class="mt-2 text-neutral-400 text-xs" :if="countyNotes()">{{ countyNotes() }}</p>
+    </div>
+    <p class="mt-2 text-neutral-400 text-sm" :if="!countyHasRace()">No results here for this office.</p>
+  </section>
+
+  {{-- Bottom right: what the colours mean, where the numbers are from, and every state. --}}
+  <aside class="flex absolute bottom-4 right-4 z-[1000] flex-col gap-3 items-end max-w-[90vw]">
+    <details class="p-3 max-w-full w-80 text-sm bg-neutral-900/90 border border-neutral-700 rounded-xl">
+      <summary class="font-medium cursor-pointer">Go to a state</summary>
+      <ul class="grid overflow-y-auto gap-x-4 gap-y-1 grid-cols-2 mt-3 max-h-64">
+        @foreach(stateLinks as link)
+          <li><a class="text-neutral-300 hover:text-white hover:underline" href="/state/{{ link.code }}">{{ link.name }}</a></li>
+        @endforeach
+      </ul>
+    </details>
+
+    <div class="p-3 max-w-full w-80 bg-neutral-900/90 border border-neutral-700 rounded-xl">
+      <div class="h-2.5 rounded-full vs-legend" role="img" aria-label="Colour scale from a Republican lead of 50 points or more, through even, to a Democratic lead of 50 points or more"></div>
+      <div class="flex justify-between mt-1 text-neutral-400 text-xs">
+        <span>R+50</span>
+        <span>Even</span>
+        <span>D+50</span>
+      </div>
+      <p class="mt-2 text-neutral-400 text-xs">Grey: votes were cast, but not between a Democrat and a Republican. Flat: no race.</p>
+      <p class="mt-2 text-neutral-500 text-xs" :if="loaded() && hasResults()">{{ sourceLine() }}</p>
+      <p class="mt-2 text-amber-300 text-xs" :if="loaded() && !hasWebgl()">This browser has no WebGL, so counties are drawn flat.</p>
+    </div>
+  </aside>
+</div>
+
+<style>
+/* The whole window, less nothing: the map is the page. */
+.vs-stage {
+  height: 100vh;
+  height: 100dvh;
+  background: #0b0f17;
+}
+
+/* The same stops as MARGIN_STOPS in resources/functions/election.ts. */
+.vs-legend {
+  background: linear-gradient(90deg, #a50f15 0%, #de2d26 25%, #fb9a8a 42%, #e8dce4 50%, #9ab8ef 58%, #3b82f6 75%, #1e40af 100%);
+}
+</style>

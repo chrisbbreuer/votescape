@@ -1,0 +1,21 @@
+@extends('default')
+@section('content')
+<script server>
+/**
+ * One state on its own: `/state/tx`. The rest of the country lies flat
+ * around it, and heights are set by the state's own tallest county.
+ *
+ * A code that names no state shows the country, as the home page does.
+ */
+import { stateByCode } from '~/resources/data/states'
+
+const found = stateByCode(String(params?.code || ''))
+const code = found ? found.code : ''
+const pageTitle = found ? `${found.name} in the 2026 midterms` : '2026 midterms in 3D'
+const pageDescription = found
+  ? `How every county in ${found.name} voted in the 2026 midterm elections, as a 3D map: height is votes cast, colour is the margin.`
+  : 'How every county in every state voted in the 2026 midterm elections, as a 3D map.'
+const canonicalPath = found ? `/state/${found.code}` : '/'
+</script>
+<ElectionMap :focus="code" />
+@endsection

@@ -10,13 +10,27 @@ Object.assign(globalThis, autoImports)
 
 // TypeScript declarations
 declare global {
-  const increment: typeof autoImports.increment
-  const decrement: typeof autoImports.decrement
-  const reset: typeof autoImports.reset
-  const count: typeof autoImports.count
   const isDark: typeof autoImports.isDark
   const preferredDark: typeof autoImports.preferredDark
   const toggleDark: typeof autoImports.toggleDark
+  const joinResults: typeof autoImports.joinResults
+  const colorExpression: typeof autoImports.colorExpression
+  const heightExpression: typeof autoImports.heightExpression
+  const metricValue: typeof autoImports.metricValue
+  const heightValue: typeof autoImports.heightValue
+  const pixelsPerMetre: typeof autoImports.pixelsPerMetre
+  const metresPerUnit: typeof autoImports.metresPerUnit
+  const viewFor: typeof autoImports.viewFor
+  const unionBounds: typeof autoImports.unionBounds
+  const formatVotes: typeof autoImports.formatVotes
+  const formatNumber: typeof autoImports.formatNumber
+  const formatMargin: typeof autoImports.formatMargin
+  const flagNotes: typeof autoImports.flagNotes
+  const escapeHtml: typeof autoImports.escapeHtml
+  const OFFICE_KEYS: typeof autoImports.OFFICE_KEYS
+  const OFFICE_LABELS: typeof autoImports.OFFICE_LABELS
+  const MARGIN_STOPS: typeof autoImports.MARGIN_STOPS
+  const NEUTRAL_COLOR: typeof autoImports.NEUTRAL_COLOR
 }
 
 export {}
