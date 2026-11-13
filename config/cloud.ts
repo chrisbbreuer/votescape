@@ -1,36 +1,40 @@
 import type { CloudConfig } from '@stacksjs/types'
 import type { CloudConfig as TsCloudConfig } from '@stacksjs/ts-cloud'
-import { env } from '@stacksjs/env'
 
 const APP_SLUG = 'votescape'
-const APP_DOMAIN = env.APP_DOMAIN || undefined
+const APP_DOMAIN = 'votescape.org'
 
 /**
- * Safe application cloud defaults.
+ * This app's port on the shared box, bound to localhost; rpx fronts it by
+ * host name. No other app's config claims 3259 to 3459, and the deploy asks
+ * the box itself before it starts anything.
+ */
+const PORT = 3270
+
+/**
+ * Where votescape.org runs.
  *
- * Set APP_DOMAIN and provider credentials before the first deploy. Use
- * `cloud.attachTo` only when this app is intentionally joining a server owned
- * by another ts-cloud project.
+ * It joins the server the `stacks` project owns and provisions nothing of its
+ * own: one page server behind the box's rpx gateway, which issues the
+ * certificate, and the address records at Porkbun, where the domain is
+ * registered.
+ *
+ * There is no database and no API. The pages are stx views and everything the
+ * map draws is a file under public/, so the release is the checkout as it
+ * stands, including the built results and the vendored map library.
  */
 export const tsCloud: TsCloudConfig = {
   project: {
-    name: APP_SLUG,
+    name: 'Votescape',
     slug: APP_SLUG,
     region: 'us-east-1',
   },
 
   stateDir: 'storage/cloud',
 
-  // Deploy to Hetzner Cloud, or set `provider: 'ssh'` to deploy to a Linux box
-  // you already own over SSH (a Raspberry Pi, a NUC, an old laptop):
-  //
-  //   cloud: { provider: 'ssh' },
-  //   ssh: { profile: 'raspberry-pi', hosts: [{ host: 'pi-stacks.local', user: 'pi' }] },
-  //
-  // See `buddy server:flash`, `server:first-boot`, `server:doctor` and
-  // `server:setup` for getting a fresh board to that point.
   cloud: {
     provider: 'hetzner',
+    attachTo: 'stacks',
   },
 
   mode: 'server',
@@ -40,6 +44,7 @@ export const tsCloud: TsCloudConfig = {
       type: 'production',
       deployBranch: 'main',
       region: 'us-east-1',
+      domain: APP_DOMAIN,
       variables: {
         APP_ENV: 'production',
         NODE_ENV: 'production',
@@ -49,6 +54,10 @@ export const tsCloud: TsCloudConfig = {
   },
 
   infrastructure: {
+    dns: {
+      provider: 'porkbun',
+      domain: APP_DOMAIN,
+    },
     compute: {
       instances: 1,
       size: 'small',
@@ -71,29 +80,30 @@ export const tsCloud: TsCloudConfig = {
       path: '/',
       domain: APP_DOMAIN,
       start: 'bun node_modules/@stacksjs/buddy/dist/serve-entry.js',
-      port: 3000,
-      preStart: [
-        'bun install --frozen-lockfile',
-        'bun node_modules/@stacksjs/buddy/dist/cli.js migrate',
-      ],
+      port: PORT,
+      healthCheck: { path: '/' },
+      // No migrate step: there is no database to migrate.
+      preStart: ['bun install --frozen-lockfile'],
+      // What the data scripts download and work from. The files the site
+      // serves are the ones they write to public/data.
+      exclude: ['storage/data', 'tests'],
       env: {
+        HOST: '127.0.0.1',
+        PORT: String(PORT),
         APP_ENV: 'production',
         NODE_ENV: 'production',
-        PORT_API: '3008',
-        API_URL: 'http://127.0.0.1:3008',
+        APP_NAME: 'Votescape',
+        APP_URL: `https://${APP_DOMAIN}`,
+        APP_DOMAIN,
+        STACKS_DEFAULT_ROUTES: 'none',
+        STACKS_MODEL_APIS: 'none',
       },
     },
 
-    api: {
-      root: '.',
-      start: 'bun node_modules/@stacksjs/actions/dist/serve/api.js',
-      port: 3008,
-      preStart: ['bun install --frozen-lockfile'],
-      env: {
-        HOST: '127.0.0.1',
-        APP_ENV: 'production',
-        NODE_ENV: 'production',
-      },
+    www: {
+      domain: `www.${APP_DOMAIN}`,
+      path: '/',
+      redirect: { to: `https://${APP_DOMAIN}`, preservePath: true },
     },
   },
 }
