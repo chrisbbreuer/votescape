@@ -13,7 +13,7 @@ The county and state shapes and the map library are committed. The results
 are not, so a fresh checkout builds them before the map has numbers to show.
 
 ```bash
-# The results. See "The results are not ours to publish" below.
+# The results. See "Where the results come from" below.
 bun run data:results
 
 ./buddy dev
@@ -33,22 +33,39 @@ bun run data:geo
 
 `./buddy doctor` checks your setup if anything does not start.
 
-## The results are not ours to publish
+## Where the results come from
 
 No openly licensed county-level returns exist yet for this election. Until
 they do, `bun run data:results` reads the New York Times' results pages, whose
-counts are licensed from The Associated Press. That is for private, local use.
-Nothing it fetches is committed: `storage/data` and `public/data/results` are
-gitignored, so a fresh checkout has to run it.
+counts are licensed from The Associated Press. The site shows them as
+unofficial and credits the source in its legend.
 
-**Do not deploy this publicly while that is the source.** A source is one file
-in `scripts/sources/` that implements `ResultsSource`, and one line in
-`scripts/build-results.ts`; replace it with certified returns (the MIT Election
-Lab publishes them a few months after an election) before the site is public.
+Nothing the script fetches is committed: `storage/data` and
+`public/data/results` are gitignored, so a fresh checkout has to run it, and a
+deploy ships the results built on the machine it runs from.
+
+That feed is a stopgap, and publishing from it is a risk the site is carrying
+knowingly. A source is one file in `scripts/sources/` that implements
+`ResultsSource`, and one line in `scripts/build-results.ts`; replace it with
+certified returns (the MIT Election Lab publishes them a few months after an
+election) as soon as they exist.
 
 The count is not finished. Run `bun run data:results --refresh` again after
 Alaska's ranked-choice tabulation, Louisiana's December runoffs and each
 state's certification. The page says when its numbers were last updated.
+
+## Deploying
+
+votescape.org runs on the shared `stacks` server, with its DNS at Porkbun
+(`config/cloud.ts`). Deploy from a checkout that has the results built:
+
+```bash
+bun run data:results --refresh
+./buddy deploy --prod --yes
+```
+
+The deploy needs `PORKBUN_API_KEY` and `PORKBUN_SECRET_KEY` in the environment
+to publish DNS, and `HCLOUD_TOKEN` the first time, to find the server.
 
 ## How the map is put together
 
