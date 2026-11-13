@@ -8,6 +8,10 @@
 const pageTitle = 'Page not found'
 const pageDescription = 'There is no page at this address on Votescape.'
 const noindex = true
+
+// The server sends this page with a 404 when nothing else matched. Asked for
+// by its own address it would otherwise answer 200.
+notFound()
 </script>
 <NotFound />
 @endsection

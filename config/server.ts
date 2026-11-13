@@ -176,7 +176,9 @@ export default {
     '/js/*': { 'Cache-Control': FOR_GOOD },
     '/css/*': { 'Cache-Control': FOR_GOOD },
     '/data/geo/*': { 'Cache-Control': FOR_GOOD },
-    '/data/results/*': { 'Cache-Control': FOR_GOOD },
+    // Not this one: it is rewritten every few hours where the site runs, and
+    // a page that could not name its version asks for it plainly.
+    '/data/results/*': { 'Cache-Control': 'public, max-age=300' },
     '/favicon.svg': { 'Cache-Control': 'public, max-age=86400' },
     '/images/*': { 'Cache-Control': 'public, max-age=86400' },
   },

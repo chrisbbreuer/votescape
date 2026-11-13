@@ -82,7 +82,9 @@ export const tsCloud: TsCloudConfig = {
       start: 'bun node_modules/@stacksjs/buddy/dist/serve-entry.js',
       port: PORT,
       healthCheck: { path: '/' },
-      // No migrate step: there is no database to migrate.
+      // No migrate step of its own: there is no database. The deploy adds
+      // `migrate --no-generate` all the same, which finds no migrations and
+      // does nothing. It also runs app/Scheduler.ts as a service on this site.
       preStart: ['bun install --frozen-lockfile'],
       // What the data scripts download and keep as they work. The files the
       // site serves are the ones they write to public/data; the scheduled
