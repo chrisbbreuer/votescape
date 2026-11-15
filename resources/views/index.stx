@@ -5,8 +5,11 @@
  * The whole country: every county a prism, as tall as the votes cast there
  * and coloured by who led.
  */
-const pageTitle = '2026 midterms in 3D'
-const pageDescription = 'How every county in every state voted in the 2026 midterm elections, as a 3D map: height is votes cast, colour is the margin.'
+import { countrySummary } from '~/resources/functions/summary'
+
+const pageTitle = '2026 midterm results by county, in 3D'
+const pageDescription = countrySummary().description
+const pageImageAlt = 'Every U.S. county as a tower, as tall as the votes cast there and coloured by its margin in the 2026 midterms.'
 const mapPage = true
 </script>
 <ElectionMap />

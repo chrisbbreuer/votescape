@@ -25,6 +25,7 @@
     "prod": "./buddy build",
     "check:release": "bun scripts/check-release.ts",
     "smoke": "bun scripts/smoke.ts",
+    "data:cards": "bun scripts/build-cards.ts",
     "deploy": "bun scripts/build-results.ts --refresh && bun scripts/check-release.ts && ./buddy deploy --prod --yes && bun scripts/smoke.ts",
     "lint": "./buddy lint",
     "lint:fix": "./buddy lint:fix",

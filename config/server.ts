@@ -185,5 +185,8 @@ export default {
     '/data/results/*': { 'Cache-Control': 'public, max-age=300' },
     '/favicon.svg': { 'Cache-Control': 'public, max-age=86400' },
     '/images/*': { 'Cache-Control': 'public, max-age=86400' },
+    // The cards are named with a version by the pages that use them.
+    '/social/*': { 'Cache-Control': 'public, max-age=86400' },
+    '/site.webmanifest': { 'Cache-Control': 'public, max-age=86400' },
   },
 } satisfies ServerConfig

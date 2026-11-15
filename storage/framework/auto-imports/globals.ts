@@ -33,6 +33,8 @@ declare global {
   const OFFICE_LABELS: typeof autoImports.OFFICE_LABELS
   const MARGIN_STOPS: typeof autoImports.MARGIN_STOPS
   const NEUTRAL_COLOR: typeof autoImports.NEUTRAL_COLOR
+  const countrySummary: typeof autoImports.countrySummary
+  const stateSummary: typeof autoImports.stateSummary
 }
 
 export {}

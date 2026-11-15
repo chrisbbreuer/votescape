@@ -1,0 +1,14 @@
+{
+  "name": "Votescape: the 2026 midterms in 3D",
+  "short_name": "Votescape",
+  "description": "How every county in every state voted in the 2026 midterm elections, as a 3D map.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f17",
+  "theme_color": "#0b0f17",
+  "icons": [
+    { "src": "/images/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/images/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

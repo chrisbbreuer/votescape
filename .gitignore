@@ -215,3 +215,6 @@ docs/erd.md
 # `bun run data` rebuilds both.
 /storage/data
 /public/data/results
+# The link preview cards quote those results, and are built with them.
+/public/social
+/storage/cards

@@ -35,7 +35,7 @@ async function read<T>(path: string): Promise<T | null> {
   }
 }
 
-for (const path of ['public/js/ts-maps.mjs', 'public/css/ts-maps.css', 'public/favicon.svg', 'public/images/share.jpg']) {
+for (const path of ['public/js/ts-maps.mjs', 'public/css/ts-maps.css', 'public/favicon.svg', 'public/images/share.jpg', 'public/images/apple-touch-icon.png', 'public/site.webmanifest', 'public/social/og.jpg', 'public/social/about.jpg', 'public/social/state-tx.jpg', 'public/social/state-dc.jpg']) {
   if (!existsSync(join(root, path)))
     problems.push(`${path} is missing`)
 }

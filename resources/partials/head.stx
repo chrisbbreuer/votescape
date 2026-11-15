@@ -10,7 +10,7 @@
 <script server>
 import { config } from '@stacksjs/config'
 import { MAP_CSS, MAP_JS } from '~/resources/assets/scripts/map-assets'
-import { dataFiles } from '~/resources/functions/assets'
+import { dataFiles, versioned } from '~/resources/functions/assets'
 
 const appName = config.app.name || 'My App'
 
@@ -29,6 +29,34 @@ const canonicalUrl = siteUrl ? `${siteUrl}${headPath}` : ''
 const preloadMap = typeof mapPage !== 'undefined' && !!mapPage
 const mapFiles = preloadMap ? dataFiles() : null
 const hidden = typeof noindex !== 'undefined' && !!noindex
+
+// The picture a link to this page is shown with: the page's own card where
+// scripts/build-cards.ts has made one, else the site's.
+const cardName = headPath === '/' ? 'og' : headPath.replace(/^\/+|\/+$/g, '').replace(/[^a-z0-9]+/gi, '-').toLowerCase()
+const ownCard = versioned(`/social/${cardName}.jpg`)
+const siteCard = versioned('/social/og.jpg')
+const cardPath = ownCard.includes('?v=') ? ownCard : siteCard.includes('?v=') ? siteCard : '/images/share.jpg'
+const cardIsBuilt = cardPath.startsWith('/social/')
+const cardWidth = cardIsBuilt ? 1200 : 800
+const cardHeight = cardIsBuilt ? 630 : 419
+const cardAlt = typeof pageImageAlt !== 'undefined' && pageImageAlt ? pageImageAlt : `${headTitle}: a 3D map of counties, as tall as their votes and coloured by margin.`
+
+// What the page is, for a search engine: the site, the page, and for a
+// state the way back to the country. Written as text, like the tag below.
+const crumb = typeof pageCrumb !== 'undefined' && pageCrumb ? String(pageCrumb) : ''
+const graph = [
+  { '@type': 'WebSite', '@id': `${siteUrl}/#site`, 'url': `${siteUrl}/`, 'name': appName, 'description': 'How every county in every state voted in the 2026 midterm elections, as a 3D map.', 'inLanguage': 'en-US' },
+  { '@type': 'WebPage', '@id': `${canonicalUrl}#page`, 'url': canonicalUrl, 'name': headTitle, 'description': headDescription, 'isPartOf': { '@id': `${siteUrl}/#site` }, 'inLanguage': 'en-US', 'primaryImageOfPage': `${siteUrl}${cardPath}` },
+]
+if (crumb) {
+  graph.push({ '@type': 'BreadcrumbList', 'itemListElement': [
+    { '@type': 'ListItem', 'position': 1, 'name': 'United States', 'item': `${siteUrl}/` },
+    { '@type': 'ListItem', 'position': 2, 'name': crumb, 'item': canonicalUrl },
+  ] })
+}
+const structured = siteUrl && !hidden
+  ? `<${'script'} type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c')}</${'script'}>`
+  : ''
 
 // Telemetry, only where the site is deployed. The AnalyticsHQ site id and the
 // BugHQ ingest key are both public by design: one names the site a page view
@@ -49,9 +77,16 @@ const bugHost = String(config.services?.bughq?.url || 'https://bughq.org')
 <meta name="color-scheme" content="dark">
 <title>{{ headTitle }}</title>
 <meta name="description" content="{{ headDescription }}">
+<meta name="application-name" content="{{ appName }}">
+<meta name="apple-mobile-web-app-title" content="{{ appName }}">
+<meta name="author" content="{{ appName }}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
 @if(hidden)
   <meta name="robots" content="noindex">
+@else
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 @endif
 @if(bugKey)
   <meta name="bughq-key" content="{{ bugKey }}">
@@ -74,14 +109,19 @@ const bugHost = String(config.services?.bughq?.url || 'https://bughq.org')
 @endif
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{ appName }}">
+<meta property="og:locale" content="en_US">
 <meta property="og:title" content="{{ headTitle }}">
 <meta property="og:description" content="{{ headDescription }}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ headTitle }}">
 <meta name="twitter:description" content="{{ headDescription }}">
 @if(siteUrl)
-  <meta property="og:image" content="{{ siteUrl }}/images/share.jpg">
-  <meta property="og:image:width" content="800">
-  <meta property="og:image:height" content="419">
-  <meta name="twitter:image" content="{{ siteUrl }}/images/share.jpg">
+  <meta property="og:image" content="{{ siteUrl }}{{ cardPath }}">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="{{ cardWidth }}">
+  <meta property="og:image:height" content="{{ cardHeight }}">
+  <meta property="og:image:alt" content="{{ cardAlt }}">
+  <meta name="twitter:image" content="{{ siteUrl }}{{ cardPath }}">
+  <meta name="twitter:image:alt" content="{{ cardAlt }}">
 @endif
+{!! structured !!}

@@ -86,6 +86,16 @@ await Bun.write(pending, text)
 await rename(pending, join(OUT, '2026.json'))
 console.error(`[data:results] 2026.json ${Math.round(text.length / 1024)} KB`)
 
+// The link preview cards quote these numbers, so they are drawn again with
+// them. A card that cannot be drawn is not a reason to fail the results.
+try {
+  const { buildCards } = await import('./build-cards')
+  console.error(`[data:results] ${await buildCards()} link preview cards`)
+}
+catch (error) {
+  console.error(`[data:results] cards not built: ${(error as Error).message}`)
+}
+
 // Where the scheduled refresh runs, tell the uptime monitor it finished. The
 // monitor expects to hear every six hours and raises an incident when it does
 // not, which is how a refresh that has quietly stopped gets noticed.

@@ -9,6 +9,7 @@
  * rather than showing the country under an address that means nothing.
  */
 import { stateByCode } from '~/resources/data/states'
+import { stateSummary } from '~/resources/functions/summary'
 
 const asked = String(params?.code || '')
 const found = stateByCode(asked)
@@ -17,10 +18,11 @@ if (!found)
 
 const code = found ? found.code : ''
 const missing = !found
-const pageTitle = found ? `${found.name} in the 2026 midterms` : 'No such state'
-const pageDescription = found
-  ? `How every county in ${found.name} voted in the 2026 midterm elections, as a 3D map: height is votes cast, colour is the margin.`
-  : 'There is no state at this address on Votescape.'
+const summary = found ? stateSummary(found.code) : null
+const pageTitle = found ? `${found.name} 2026 midterm results by county, in 3D` : 'No such state'
+const pageDescription = summary ? summary.description : 'There is no state at this address on Votescape.'
+const pageImageAlt = summary ? `${summary.title}. ${summary.subtitle} A 3D map of its counties, as tall as their votes.` : ''
+const pageCrumb = found ? found.name : ''
 const canonicalPath = found ? `/state/${found.code}` : `/state/${asked}`
 const noindex = missing
 const mapPage = !missing
