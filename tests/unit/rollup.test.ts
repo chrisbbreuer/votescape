@@ -1,6 +1,6 @@
 import type { Candidate, Contest, UnitCount } from '../../scripts/sources/types'
 import { describe, expect, test } from 'bun:test'
-import { comparable, countyId, countyUnits, FLAG, rollup, rollupOffice, sides } from '../../scripts/lib/rollup'
+import { comparable, oneEach, countyId, countyUnits, FLAG, rollup, rollupOffice, sides } from '../../scripts/lib/rollup'
 
 // Small made-up contests. The numbers are chosen to be easy to add up, not to
 // resemble any real count.
@@ -241,5 +241,43 @@ describe('the top of the ticket', () => {
     expect(Object.keys(results.top.counties).sort()).toEqual(['06001', '48001', '53001'])
     expect(Object.keys(results.senate.counties)).toEqual(['48001'])
     expect(Object.keys(results.governor.counties).sort()).toEqual(['06001', '48001'])
+  })
+})
+
+describe('a presidential year', () => {
+  test('the presidency is rolled up, and there is no top of the ticket', () => {
+    const { results, problems } = rollup([
+      contest({ office: 'president', candidates: [D('h'), R('t')], units: [unit('state', 'Texas', { h: 60, t: 40 }), unit('county', 'Harris', { h: 60, t: 40 }, { countyFips: '201' })] }),
+    ], {}, new Set(['48201']))
+    expect(problems).toEqual([])
+    expect(results.president?.counties['48201']).toEqual([60, 40, 100, 100, 0, 0.2])
+    expect(results.top).toBeUndefined()
+  })
+})
+
+describe('a contest counted for the state alone', () => {
+  test('its votes count for the state, stand on no county, and are no problem', () => {
+    const whole = contest({ office: 'president', countyless: true, candidates: [D('h'), R('t')], units: [unit('state', 'Texas', { h: 60, t: 40 })] })
+    const { results, problems } = rollup([whole], {}, new Set(['48201']))
+    expect(problems).toEqual([])
+    expect(results.president?.counties).toEqual({})
+    expect(results.president?.states['48']).toMatchObject({ dem: 60, rep: 40, total: 100, countyless: true })
+  })
+
+  test('one uncontested seat with no counties does not make a state of them', () => {
+    const { results } = rollup([
+      contest({ id: 'a', office: 'house', district: '1', candidates: [D('a'), R('b')], units: [unit('state', 'Texas', { a: 60, b: 40 }), unit('county', 'Harris', { a: 60, b: 40 }, { countyFips: '201' })] }),
+      contest({ id: 'b', office: 'house', district: '2', countyless: true, uncontested: true, candidates: [D('c')], units: [unit('state', 'Texas', {})] }),
+    ], {}, new Set(['48201']))
+    expect(results.house.states['48']?.countyless).toBeUndefined()
+  })
+})
+
+describe('two elections for one office in a state', () => {
+  test('the regular one stands for the state, not both added together', () => {
+    const regular = contest({ id: 'regular', office: 'senate', candidates: [D('a'), R('b')], units: [unit('state', 'Texas', { a: 60, b: 40 })], countyless: true })
+    const special = contest({ id: 'special', office: 'senate', special: true, candidates: [D('c'), R('d')], units: [unit('state', 'Texas', { c: 500, d: 400 })], countyless: true })
+    expect(oneEach([special, regular]).map(c => c.id)).toEqual(['regular'])
+    expect(rollup([special, regular], {}, new Set()).results.senate.states['48']?.total).toBe(100)
   })
 })

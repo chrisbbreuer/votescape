@@ -1,6 +1,6 @@
 import type { CountyFeature, ResultsFile } from '../../resources/functions/election'
 import { describe, expect, test } from 'bun:test'
-import { colorExpression, flagNotes, formatMargin, formatVotes, heightExpression, heightValue, joinResults, metresPerUnit, metricValue, pixelsPerMetre, unionBounds, viewFor } from '../../resources/functions/election'
+import { fromTrackpad, officeData, parseView, viewQuery, colorExpression, flagNotes, formatMargin, formatVotes, heightExpression, heightValue, joinResults, metresPerUnit, metricValue, pixelsPerMetre, unionBounds, viewFor } from '../../resources/functions/election'
 import { FLAG } from '../../scripts/lib/rollup'
 
 const county = (id: string, area: number): CountyFeature => ({ type: 'Feature', id, properties: { n: id, l: id, st: id.slice(0, 2), a: area, c: [0, 0] }, geometry: null })
@@ -102,5 +102,59 @@ describe('words', () => {
     expect(flagNotes(0, 'house')).toEqual([])
     expect(flagNotes(FLAG.firstRound | FLAG.undecided, 'senate')).toHaveLength(2)
     expect(flagNotes(FLAG.notComparable, 'house')[0]).toContain('no Democrat against a Republican')
+  })
+})
+
+describe('a view as an address', () => {
+  test('the present election and its leading office are left out', () => {
+    expect(viewQuery({ year: 2026, office: 'house', metric: 'votes', county: '' })).toBe('')
+    expect(viewQuery({ year: 2024, office: 'president', metric: 'votes', county: '' })).toBe('?year=2024')
+    expect(viewQuery({ year: 2024, office: 'senate', metric: 'density', county: '48201' })).toBe('?year=2024&office=senate&by=density&county=48201')
+  })
+
+  test('other keys of the address are kept', () => {
+    expect(viewQuery({ year: 2026, office: 'senate', metric: 'votes', county: '' }, '?ref=x&year=2020')).toBe('?ref=x&office=senate')
+  })
+
+  test('read back, with what an election did not have giving way to what it opens on', () => {
+    expect(parseView('?year=2020&office=senate')).toEqual({ year: 2020, office: 'senate', metric: 'votes', county: '' })
+    expect(parseView('?year=2020')).toEqual({ year: 2020, office: 'president', metric: 'votes', county: '' })
+    // No presidency in a midterm, no top of ticket in a presidential year, no election in 2019.
+    expect(parseView('?year=2022&office=president').office).toBe('house')
+    expect(parseView('?year=2024&office=top').office).toBe('president')
+    expect(parseView('?year=2019').year).toBe(2026)
+    expect(parseView('?year=2016&office=senate').office).toBe('president')
+  })
+})
+
+describe('telling a trackpad from a wheel', () => {
+  test('a wheel turns in notches of 120, whatever its pixels', () => {
+    expect(fromTrackpad({ deltaX: 0, deltaY: 4.000244, deltaMode: 0, wheelDeltaY: -120 })).toBe(false)
+    expect(fromTrackpad({ deltaX: 0, deltaY: 100, deltaMode: 0, wheelDeltaY: -120 })).toBe(false)
+    expect(fromTrackpad({ deltaX: 0, deltaY: 3, deltaMode: 1 })).toBe(false)
+  })
+
+  test('a trackpad moves by the pixel, and sideways', () => {
+    expect(fromTrackpad({ deltaX: 0, deltaY: 12, deltaMode: 0, wheelDeltaY: -36 })).toBe(true)
+    expect(fromTrackpad({ deltaX: -3, deltaY: 0, deltaMode: 0, wheelDeltaY: 0 })).toBe(true)
+    expect(fromTrackpad({ deltaX: 0, deltaY: 7, deltaMode: 0 })).toBe(true)
+    expect(fromTrackpad({ deltaX: 0, deltaY: 100, deltaMode: 0 })).toBe(false)
+  })
+})
+
+describe('an election with an office missing', () => {
+  test('a county has nothing for an office the election did not have', () => {
+    const county = { type: 'Feature', id: '48201', properties: { n: 'Harris', l: 'Harris County', st: '48', a: 4412, c: [0, 0] }, geometry: null } as CountyFeature
+    const empty = { counties: {}, states: {} }
+    const results = { meta: {}, president: { counties: { 48201: [900, 700, 1650, null, 0, 0.125] }, states: {} }, house: empty, senate: empty, governor: empty } as unknown as ResultsFile
+    joinResults([county], results)
+    expect(county.properties.v_president).toBe(1650)
+    expect(county.properties.f_president).toBe(1)
+    expect(county.properties.v_top).toBe(0)
+    expect(county.properties.f_top).toBe(0)
+    // Another election on the same counties leaves nothing of this one.
+    joinResults([county], { meta: {}, house: empty, senate: empty, governor: empty } as unknown as ResultsFile)
+    expect(county.properties.v_president).toBe(0)
+    expect(officeData(results, 'top')).toEqual(empty)
   })
 })

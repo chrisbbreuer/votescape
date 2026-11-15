@@ -1,8 +1,9 @@
 # Votescape
 
-How every county in every state voted in the 2026 midterms, as a 3D map: each
-county is a prism as tall as the votes cast there and coloured by who led. `/`
-is the country; `/state/tx` is one state on its own.
+How every county in every state voted in each election from 2016 to 2026, as
+a 3D map: each county is a prism as tall as the votes cast there and coloured
+by who led. `/` is the country; `/state/tx` is one state on its own. The row
+of years along the bottom changes the election, and `?year=2020` links to one.
 
 A [Stacks](https://stacksjs.com) application, drawn with
 [ts-maps](https://github.com/stacksjs/ts-maps).
@@ -14,10 +15,13 @@ are not, so a fresh checkout builds them before the map has numbers to show.
 
 ```bash
 # The results. See "Where the results come from" below.
-bun run data:results
+bun run data:results   # the election being counted now
+bun run data:history   # the five before it, which are built once
 
 ./buddy dev
 ```
+
+An election whose file has not been built is not offered on the page.
 
 Two more scripts rebuild what is committed, when its source changes:
 
@@ -39,6 +43,19 @@ No openly licensed county-level returns exist yet for this election. Until
 they do, `bun run data:results` reads the New York Times' results pages, whose
 counts are licensed from The Associated Press. The site shows them as
 unofficial and credits the source in its legend.
+
+The earlier elections each have a source of their own, one line apiece in
+`scripts/build-results.ts`:
+
+| Election | Source |
+|---|---|
+| 2016 | The MIT Election Data and Science Lab's county presidential returns: certified |
+| 2018, 2020, 2022, 2024 | The Times' results files for each year: the final counts the AP reported |
+
+Today's shapes are used for every year. Alaska before 2024 was not counted by
+the house districts on the map, and Connecticut in 2016 was counted by
+counties it has since abolished, so for those years each has a state total
+and nothing standing on the map.
 
 Nothing the script fetches is committed: `storage/data` and
 `public/data/results` are gitignored, so a fresh checkout has to run it, and a
@@ -86,8 +103,10 @@ checkout in CI has no results to ship, so deploys are run from a machine.
   equator, which is why there is no basemap under the map. Alaska is drawn by
   state house district and Connecticut by planning region, because that is how
   each reports.
-- `scripts/lib/rollup.ts` turns contests into a row per county for the House,
-  the Senate, governor, and each state's most prominent race.
+- `resources/data/elections.ts` lists the elections and the offices each had.
+- `scripts/lib/rollup.ts` turns contests into a row per county for the
+  presidency, the House, the Senate, governor, and in a midterm each state's
+  most prominent race.
 - `resources/composables/useElectionMap.ts` is everything that touches
   ts-maps; `resources/functions/election.ts` is what the numbers mean.
 - `resources/components/ElectionMap.stx` is the page.

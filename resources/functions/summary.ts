@@ -10,6 +10,7 @@ import type { ResultsFile } from './election'
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
+import { LATEST } from '../data/elections'
 import { STATES } from '../data/states'
 import { formatMargin, formatVotes, OFFICE_LABELS } from './election'
 
@@ -27,7 +28,7 @@ export interface PlaceSummary {
 let cached: { at: number, results: ResultsFile | null } | null = null
 
 function results(): ResultsFile | null {
-  const file = join(process.cwd(), 'public/data/results/2026.json')
+  const file = join(process.cwd(), `public/data/results/${LATEST.year}.json`)
   try {
     const at = statSync(file).mtimeMs
     if (cached?.at !== at)
@@ -69,8 +70,8 @@ export function stateSummary(code: string): PlaceSummary | null {
   if (!state)
     return null
   const data = results()
-  const row = data?.top.states[state.fips]
-  const office = OFFICE_LABELS[data?.top.office[state.fips] ?? 'house']
+  const row = data?.top?.states[state.fips]
+  const office = OFFICE_LABELS[data?.top?.office[state.fips] ?? 'house']
   const plain: PlaceSummary = {
     eyebrow: '2026 midterms',
     title: `${state.name}, county by county`,

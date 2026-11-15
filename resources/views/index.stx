@@ -7,7 +7,7 @@
  */
 import { countrySummary } from '~/resources/functions/summary'
 
-const pageTitle = '2026 midterm results by county, in 3D'
+const pageTitle = 'Election results by county in 3D, 2016 to 2026'
 const pageDescription = countrySummary().description
 const pageImageAlt = 'Every U.S. county as a tower, as tall as the votes cast there and coloured by its margin in the 2026 midterms.'
 const mapPage = true

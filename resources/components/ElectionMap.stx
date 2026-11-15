@@ -9,28 +9,40 @@
   On a wide screen the panels sit in the corners around the map. On a phone
   they stack: what is shown above the map, the place and the legend below. --}}
 <script server>
+import { ELECTIONS, LATEST } from '~/resources/data/elections'
 import { stateByCode, STATES } from '~/resources/data/states'
 import { dataFiles } from '~/resources/functions/assets'
 
 export const files = dataFiles()
+// The elections there are results for. The present one is always offered:
+// where it has none yet, the page says so.
+export const elections = ELECTIONS.filter(e => e === LATEST || files.years[e.year])
+export const yearFiles = JSON.stringify(files.years)
+export const firstYear = elections[0].year
+export const lastYear = LATEST.year
 
 export const focus = String($props.focus || '').toLowerCase()
 export const focusState = stateByCode(focus)
 export const focusName = focusState ? focusState.name : ''
 export const stateLinks = STATES
-export const heading = focusName ? `${focusName} in the 2026 midterms, county by county` : 'The 2026 midterms, county by county'
+export const heading = focusName ? `${focusName} in every election from ${firstYear} to ${lastYear}, county by county` : `Every election from ${firstYear} to ${lastYear}, county by county`
 </script>
 
 <script client>
-import type { CountyInfo, ElectionMapHandle, Summary } from '../composables/useElectionMap'
+import type { CountyInfo, ElectionInfo, ElectionMapHandle, Summary } from '../composables/useElectionMap'
+import type { Election } from '../data/elections'
 import type { Metric, OfficeKey } from '../functions/election'
+import { ELECTIONS, LATEST } from '../data/elections'
 import { mountElectionMap, readView, runWhenMapReady, writeView } from '../composables/useElectionMap'
 import { reportError, startErrorReporting } from '../composables/useErrorReporting'
 import { closePopover, copyText, nativeShareAvailable, saveShareCard, shareNative, shareTargets, viewUrl } from '../composables/useShare'
 import { formatMargin, formatNumber } from '../functions/election'
 
-const office = state<OfficeKey>('house')
+const election = state<Election>(LATEST)
+const office = state<OfficeKey>(LATEST.offices[0])
 const metric = state<Metric>('votes')
+// The year whose results are on their way, while they are.
+const pending = state(0)
 const hovered = state<CountyInfo | null>(null)
 const selected = state<CountyInfo | null>(null)
 const totals = state<Summary | null>(null)
@@ -40,6 +52,7 @@ const explored = state(false)
 const hasResults = state(true)
 const hasWebgl = state(true)
 const official = state(false)
+const final = state(false)
 const updated = state('')
 const sourceLabel = state('')
 // On a small screen the totals show their first lines until they are opened.
@@ -60,14 +73,23 @@ function percent(value: number): string {
   return `${value.toFixed(1)}%`
 }
 
+const year = derived(() => election().year)
+const electionLabel = derived(() => election().label)
+const electionName = derived(() => election().name)
+const yearShown = derived(() => pending() || year())
+const hasOffice = (key: OfficeKey): boolean => election().offices.includes(key)
+
 // The county shown in the card: the one under the pointer, else the one clicked.
 const county = derived(() => hovered() ?? selected())
 const countyPinned = derived(() => !!selected() && (!hovered() || hovered()?.id === selected()?.id))
 const countyName = derived(() => county()?.name ?? '')
 const countyState = derived(() => county()?.state ?? '')
 const countyLink = derived(() => `/state/${county()?.code ?? ''}`)
-const countyOffice = derived(() => county()?.office ?? '')
+const countyOffice = derived(() => (county()?.office ? `${county()?.office}, ${year()}` : ''))
 const countyHasRace = derived(() => county()?.hasRace ?? false)
+const countyAbsent = derived(() => (county()?.stateOnly
+  ? `${county()?.state}'s ${year()} count is for the state as a whole, so there is nothing to show for this place.`
+  : 'No results here for this office.'))
 const countyDemName = derived(() => county()?.demName ?? '')
 const countyRepName = derived(() => county()?.repName ?? '')
 const countyDem = derived(() => formatNumber(county()?.dem ?? 0))
@@ -84,7 +106,7 @@ const countyCounted = derived(() => (county()?.pct === null || county()?.pct ===
 const countyNotes = derived(() => (county()?.notes ?? []).join(' '))
 
 const totalsTitle = derived(() => totals()?.title ?? '')
-const totalsOffice = derived(() => totals()?.office ?? '')
+const totalsOffice = derived(() => (totals()?.office ? `${totals()?.office}, ${year()}` : ''))
 const totalsHasRace = derived(() => totals()?.hasRace ?? false)
 const totalsDemName = derived(() => totals()?.demName ?? '')
 const totalsRepName = derived(() => totals()?.repName ?? '')
@@ -115,27 +137,28 @@ const seatsNote = derived(() => {
   return seatCount() > 1 ? `${called}${majority} of ${seatCount()} seats is a majority.` : called.trim()
 })
 
-const sourceBadge = derived(() => (official() ? 'Certified' : 'Unofficial'))
-const sourceLine = derived(() => (updated() ? `Updated ${updated()}` : ''))
+const sourceBadge = derived(() => (official() ? 'Certified' : final() ? 'Final count' : 'Unofficial'))
+const sourceLine = derived(() => (final() ? electionLabel() : updated() ? `Updated ${updated()}` : ''))
 const sourceCredit = derived(() => (sourceLabel() ? `Source: ${sourceLabel()}` : ''))
 
 // --- Sharing: the pinned county if there is one, else the totals shown. ---
 
-const shareUrl = derived(() => viewUrl(office(), metric(), selected()?.id ?? ''))
+const view = derived(() => ({ year: year(), office: office(), metric: metric(), county: selected()?.id ?? '' }))
+const shareUrl = derived(() => viewUrl(view()))
 const shareTitle = derived(() => (selected() ? `${selected()?.name}, ${selected()?.state}` : totalsTitle() === 'United States' || !totalsTitle() ? 'The United States' : totalsTitle()))
 const shareText = derived(() => {
   const place = selected()
   const margin = place ? formatMargin(place.margin) : totalsMargin()
   const hasRace = place ? place.hasRace : totalsHasRace()
-  const what = place ? place.office : totalsOffice()
+  const what = place ? place.office : totals()?.office ?? ''
   const lead = !hasRace || !margin
-    ? `${shareTitle()} in the 2026 midterms.`
+    ? `${shareTitle()} in ${electionName()}.`
     : margin === 'Even'
-      ? `${shareTitle()} split evenly for ${what} in the 2026 midterms.`
-      : `${shareTitle()} went ${margin} for ${what} in the 2026 midterms.`
+      ? `${shareTitle()} split evenly for ${what} in ${electionName()}.`
+      : `${shareTitle()} went ${margin} for ${what} in ${electionName()}.`
   return `${lead} Every county in 3D, as tall as its votes.`
 })
-const shareLinks = derived(() => shareTargets(shareText(), shareUrl()))
+const shareLinks = derived(() => shareTargets(shareText(), shareUrl(), `${electionName().replace(/^the/, 'The')}, county by county`))
 const shareX = derived(() => shareLinks().x)
 const shareFacebook = derived(() => shareLinks().facebook)
 const shareLinkedin = derived(() => shareLinks().linkedin)
@@ -163,10 +186,11 @@ async function shareSheet(): Promise<void> {
 async function saveImage(): Promise<void> {
   const place = selected()
   const sum = totals()
-  const footer = `${official() ? 'Certified results' : 'Unofficial results'}${updated() ? `, updated ${updated()}` : ''}`
+  const footer = official() ? 'Certified results' : final() ? 'Final count, as reported' : `Unofficial results${updated() ? `, updated ${updated()}` : ''}`
+  const when = { election: electionLabel(), year: year() }
   const card = place
-    ? { eyebrow: place.office, title: place.name, subtitle: place.state, hasRace: place.hasRace, margin: formatMargin(place.margin), leansDem: (place.margin ?? 0) > 0, demName: place.demName, repName: place.repName, dem: place.dem, rep: place.rep, total: place.total, footer }
-    : { eyebrow: sum?.office ?? '', title: sum?.title ?? 'United States', subtitle: '', hasRace: sum?.hasRace ?? false, margin: formatMargin(sum?.margin), leansDem: (sum?.margin ?? 0) > 0, demName: sum?.demName ?? 'Democrats', repName: sum?.repName ?? 'Republicans', dem: sum?.dem ?? 0, rep: sum?.rep ?? 0, total: sum?.total ?? 0, footer }
+    ? { ...when, eyebrow: place.office, title: place.name, subtitle: place.state, hasRace: place.hasRace, margin: formatMargin(place.margin), leansDem: (place.margin ?? 0) > 0, demName: place.demName, repName: place.repName, dem: place.dem, rep: place.rep, total: place.total, footer }
+    : { ...when, eyebrow: sum?.office ?? '', title: sum?.title ?? 'United States', subtitle: '', hasRace: sum?.hasRace ?? false, margin: formatMargin(sum?.margin), leansDem: (sum?.margin ?? 0) > 0, demName: sum?.demName ?? 'Democrats', repName: sum?.repName ?? 'Republicans', dem: sum?.dem ?? 0, rep: sum?.rep ?? 0, total: sum?.total ?? 0, footer }
   if (await saveShareCard(card, shareText(), shareUrl()) === 'saved') {
     saved.set(true)
     setTimeout(() => saved.set(false), 2000)
@@ -177,17 +201,49 @@ function toggleTotals(): void {
   totalsOpen.set(!totalsOpen())
 }
 
+/** What the page says about the results now shown. */
+function shown(info: ElectionInfo): void {
+  election.set(info.election)
+  office.set(info.office)
+  hasResults.set(!!info.meta)
+  official.set(!!info.meta?.official)
+  final.set(!!info.meta?.final)
+  sourceLabel.set(info.meta?.sourceLabel ?? '')
+  updated.set(info.meta?.updatedAt ? new Date(info.meta.updatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '')
+}
+
+async function chooseYear(next: number): Promise<void> {
+  if (!handle || next === yearShown())
+    return
+  pending.set(next)
+  const info = await handle.setElection(next)
+  // Another year was asked for while this one was on its way: that one answers.
+  if (pending() !== next)
+    return
+  pending.set(0)
+  if (!info)
+    return
+  shown(info)
+  totals.set(handle.summary())
+  writeView(view())
+}
+
+/** A year about to be chosen: its results are asked for while the finger is still coming down. */
+function warmYear(next: number): void {
+  handle?.warm(next)
+}
+
 function chooseOffice(next: OfficeKey): void {
   office.set(next)
   handle?.setOffice(next)
   totals.set(handle?.summary() ?? null)
-  writeView(office(), metric(), selected()?.id ?? '')
+  writeView(view())
 }
 
 function chooseMetric(next: Metric): void {
   metric.set(next)
   handle?.setMetric(next)
-  writeView(office(), metric(), selected()?.id ?? '')
+  writeView(view())
 }
 
 function resetView(): void {
@@ -217,39 +273,38 @@ function unpin(): void {
 async function mount(): Promise<void> {
   startErrorReporting()
   canShare.set(nativeShareAvailable())
-  const view = readView()
-  office.set(view.office)
-  metric.set(view.metric)
+  const asked = readView()
+  election.set(ELECTIONS.find(e => e.year === asked.year) ?? LATEST)
+  office.set(asked.office)
+  metric.set(asked.metric)
   try {
     handle = await mountElectionMap('election-map', {
-      office: view.office,
-      metric: view.metric,
-      county: view.county,
+      year: asked.year,
+      office: asked.office,
+      metric: asked.metric,
+      county: asked.county,
       ids: { search: 'vs-search', places: 'vs-places', popover: 'vs-states', table: 'vs-table-body' },
       onHover: info => hovered.set(info),
       onSelect: (info) => {
         selected.set(info)
-        writeView(office(), metric(), info?.id ?? '')
+        writeView(view())
       },
       onExplore: () => explored.set(true),
-      onReady: ({ meta, webgl }) => {
-        hasResults.set(!!meta)
-        hasWebgl.set(webgl)
-        official.set(!!meta?.official)
-        sourceLabel.set(meta?.sourceLabel ?? '')
-        updated.set(meta?.updatedAt ? new Date(meta.updatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '')
+      onReady: (ready) => {
+        shown(ready)
+        hasWebgl.set(ready.webgl)
       },
     })
   }
   catch (error) {
     // Whatever went wrong, say so: the alternative is a loader that never ends.
     console.error('[votescape] the map could not be drawn:', error)
-    reportError(error, { where: 'map mount', office: view.office, metric: view.metric })
+    reportError(error, { where: 'map mount', year: asked.year, office: asked.office, metric: asked.metric })
     handle = null
   }
   // Drawn nothing without throwing: the shapes or the library did not arrive.
   if (!handle && !failed())
-    reportError(new Error('The map did not mount'), { where: 'map mount', office: view.office })
+    reportError(new Error('The map did not mount'), { where: 'map mount', year: asked.year, office: asked.office })
   failed.set(!handle)
   totals.set(handle?.summary() ?? null)
   loaded.set(true)
@@ -269,7 +324,7 @@ onDestroy(() => {
 <div class="vs-stage" :class="selected() ? 'has-pin' : ''">
   <h1 class="sr-only">{{ heading }}</h1>
 
-  <div id="election-map" data-stx-ignore data-focus="{{ focus }}" data-counties="{{ files.counties }}" data-states="{{ files.states }}" data-results="{{ files.results }}" class="vs-map" role="application" aria-label="3D map of results by county. Drag to move, scroll or pinch to zoom, tap or click a county for its result."></div>
+  <div id="election-map" data-stx-ignore data-focus="{{ focus }}" data-counties="{{ files.counties }}" data-states="{{ files.states }}" data-results="{{ files.results }}" data-years="{{ yearFiles }}" class="vs-map" role="application" aria-label="3D map of results by county. Drag to move, pinch or use the wheel to zoom, tap or click a county for its result."></div>
 
   {{-- Over the map until it is drawn. --}}
   <div class="vs-veil" :class="loaded() ? 'is-done' : ''" aria-hidden="true">
@@ -298,15 +353,17 @@ onDestroy(() => {
           <span>All states</span>
         </a>
       @else
-        <span class="vs-tag">2026 midterms</span>
+        <span class="vs-tag">{{ electionLabel() }}</span>
       @endif
     </div>
 
+    {{-- The offices of the election shown. One that was not part of it is not offered. --}}
     <div class="vs-offices vs-seg" role="group" aria-label="Office">
-      <button type="button" :class="loaded() && office() === 'house' ? 'is-on' : ''" :aria-pressed="office() === 'house' ? 'true' : 'false'" @click="chooseOffice('house')">House</button>
-      <button type="button" :class="loaded() && office() === 'senate' ? 'is-on' : ''" :aria-pressed="office() === 'senate' ? 'true' : 'false'" @click="chooseOffice('senate')">Senate</button>
-      <button type="button" :class="loaded() && office() === 'governor' ? 'is-on' : ''" :aria-pressed="office() === 'governor' ? 'true' : 'false'" @click="chooseOffice('governor')">Governor</button>
-      <button type="button" :class="loaded() && office() === 'top' ? 'is-on' : ''" :aria-pressed="office() === 'top' ? 'true' : 'false'" @click="chooseOffice('top')">Top of ticket</button>
+      <button type="button" :class="!hasOffice('president') ? 'is-off' : loaded() && office() === 'president' ? 'is-on' : ''" :aria-pressed="office() === 'president' ? 'true' : 'false'" @click="chooseOffice('president')">President</button>
+      <button type="button" :class="!hasOffice('house') ? 'is-off' : loaded() && office() === 'house' ? 'is-on' : ''" :aria-pressed="office() === 'house' ? 'true' : 'false'" @click="chooseOffice('house')">House</button>
+      <button type="button" :class="!hasOffice('senate') ? 'is-off' : loaded() && office() === 'senate' ? 'is-on' : ''" :aria-pressed="office() === 'senate' ? 'true' : 'false'" @click="chooseOffice('senate')">Senate</button>
+      <button type="button" :class="!hasOffice('governor') ? 'is-off' : loaded() && office() === 'governor' ? 'is-on' : ''" :aria-pressed="office() === 'governor' ? 'true' : 'false'" @click="chooseOffice('governor')">Governor</button>
+      <button type="button" :class="!hasOffice('top') ? 'is-off' : loaded() && office() === 'top' ? 'is-on' : ''" :aria-pressed="office() === 'top' ? 'true' : 'false'" @click="chooseOffice('top')">Top of ticket</button>
     </div>
 
     <div class="vs-top-end">
@@ -446,7 +503,7 @@ onDestroy(() => {
       <p class="vs-more vs-small">{{ totalsVotes() }}</p>
       <p class="vs-more vs-small" :if="totalsNotes()">{{ totalsNotes() }}</p>
     </div>
-    <p class="vs-status" :if="!totalsHasRace()">This office was not on the ballot here in 2026.</p>
+    <p class="vs-status" :if="!totalsHasRace()">This office was not on the ballot here in {{ year() }}.</p>
   </section>
 
   <section class="vs-panel vs-totals" :if="loaded() && !hasResults() && !failed()">
@@ -457,42 +514,6 @@ onDestroy(() => {
   <section class="vs-panel vs-totals" :if="failed()" role="alert">
     <h2>The map could not load</h2>
     <p class="vs-status">Check your connection and reload the page.</p>
-  </section>
-
-  {{-- The county under the pointer, or the one clicked. --}}
-  <section class="vs-county vs-panel" :if="county()" aria-live="polite">
-    <div class="vs-panel-head">
-      <div>
-        <p class="vs-eyebrow">{{ countyOffice() }}</p>
-        <h2>{{ countyName() }}</h2>
-        <a class="vs-link" :href="countyLink()">{{ countyState() }}</a>
-      </div>
-      <div class="vs-panel-side">
-        <button type="button" class="vs-close" aria-label="Close" :if="countyPinned()" @click="unpin()">
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
-        </button>
-        <p class="vs-margin" :class="countyLeansDem() ? 'is-dem' : 'is-rep'" :if="countyHasRace() && countyMargin()">{{ countyMargin() }}</p>
-      </div>
-    </div>
-
-    <div :if="countyHasRace()">
-      <div class="vs-share" role="img" aria-label="Share of the two-party vote" :if="countyHasSides()">
-        <span class="vs-share-dem" :style="countyDemBar()"></span>
-      </div>
-      <dl class="vs-sides">
-        <div>
-          <dt><i class="is-dem vs-dot"></i>{{ countyDemName() }}</dt>
-          <dd><b class="vs-pct">{{ countyDemPercent() }}</b><span class="vs-count">{{ countyDem() }}</span></dd>
-        </div>
-        <div>
-          <dt><i class="is-rep vs-dot"></i>{{ countyRepName() }}</dt>
-          <dd><b class="vs-pct">{{ countyRepPercent() }}</b><span class="vs-count">{{ countyRep() }}</span></dd>
-        </div>
-      </dl>
-      <p class="vs-small">{{ countyTotal() }}<span :if="countyCounted()">. {{ countyCounted() }}</span></p>
-      <p class="vs-small" :if="countyNotes()">{{ countyNotes() }}</p>
-    </div>
-    <p class="vs-status" :if="!countyHasRace()">No results here for this office.</p>
   </section>
 
   {{-- Turning the map without a touch screen. --}}
@@ -514,43 +535,93 @@ onDestroy(() => {
     </button>
   </div>
 
-  <p class="vs-hint" :class="explored() ? 'is-gone' : ''" :if="loaded() && !failed() && !county()" aria-hidden="true">
-    <span class="vs-hint-mouse">Drag to move. Scroll to zoom. Right-drag to orbit.</span>
-    <span class="vs-hint-touch">Tap a county. Pinch to zoom, twist to turn.</span>
-  </p>
-
-  {{-- What the colours and heights mean, and where the numbers are from. --}}
-  <aside class="vs-key vs-panel" aria-label="Legend">
-    <div class="vs-key-row">
-      <span class="vs-eyebrow">Colour: the margin</span>
-    </div>
-    <div class="vs-scale" role="img" aria-label="Colour scale from a Republican lead of 50 points or more, through even, to a Democratic lead of 50 points or more"></div>
-    <div class="vs-scale-ends">
-      <span>R+50</span>
-      <span>Even</span>
-      <span>D+50</span>
-    </div>
-    <ul class="vs-chips vs-more">
-      <li><i class="is-grey"></i>No Democrat against a Republican</li>
-      <li><i class="is-flat"></i>No race</li>
-    </ul>
-
-    <div class="vs-key-height vs-key-row">
-      <span class="vs-eyebrow">Height</span>
-      <div class="vs-seg vs-seg-small" role="group" aria-label="Height">
-        <button type="button" :class="metric() === 'votes' ? 'is-on' : ''" :aria-pressed="metric() === 'votes' ? 'true' : 'false'" @click="chooseMetric('votes')">Votes</button>
-        <button type="button" :class="metric() === 'density' ? 'is-on' : ''" :aria-pressed="metric() === 'density' ? 'true' : 'false'" @click="chooseMetric('density')">Per sq mi</button>
-      </div>
-      <button type="button" class="vs-reset" @click="resetView()">Reset</button>
-    </div>
-
-    <p class="vs-small vs-source" :if="loaded() && hasResults()">
-      <span class="vs-badge" :class="official() ? 'is-official' : ''">{{ sourceBadge() }}</span>
-      <span>{{ sourceLine() }}</span>
-      <span class="vs-credit vs-more">{{ sourceCredit() }}</span>
+  {{-- Along the bottom: which election, the place chosen, and the legend. In
+    the corners on a wide screen; one stack, in this order, on a narrow one. --}}
+  <div class="vs-dock">
+    <p class="vs-hint" :class="explored() ? 'is-gone' : ''" :if="loaded() && !failed() && !county()" aria-hidden="true">
+      <span class="vs-hint-mouse">Drag to move. Pinch or wheel to zoom. Right-drag to orbit.</span>
+      <span class="vs-hint-touch">Tap a county. Pinch to zoom, twist to turn.</span>
     </p>
-    <p class="vs-small vs-warn" :if="loaded() && !hasWebgl()">This browser has no WebGL, so counties are drawn flat.</p>
-  </aside>
+
+    {{-- Which election: the years there are results for, oldest first. --}}
+    <nav class="vs-years" aria-label="Election">
+      @foreach(elections as e)
+        <button type="button" data-kind="{{ e.kind }}" :class="yearShown() === {{ e.year }} ? (pending() ? 'is-on is-busy' : 'is-on') : ''" :aria-pressed="year() === {{ e.year }} ? 'true' : 'false'" aria-label="{{ e.label }}" title="{{ e.label }}" @pointerenter="warmYear({{ e.year }})" @pointerdown="warmYear({{ e.year }})" @click="chooseYear({{ e.year }})">
+          <b>{{ e.year }}</b>
+          <span>{{ e.kind === 'presidential' ? 'President' : 'Midterm' }}</span>
+        </button>
+      @endforeach
+    </nav>
+
+    {{-- The county under the pointer, or the one clicked. --}}
+    <section class="vs-county vs-panel" :if="county()" aria-live="polite">
+      <div class="vs-panel-head">
+        <div>
+          <p class="vs-eyebrow">{{ countyOffice() }}</p>
+          <h2>{{ countyName() }}</h2>
+          <a class="vs-link" :href="countyLink()">{{ countyState() }}</a>
+        </div>
+        <div class="vs-panel-side">
+          <button type="button" class="vs-close" aria-label="Close" :if="countyPinned()" @click="unpin()">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+          </button>
+          <p class="vs-margin" :class="countyLeansDem() ? 'is-dem' : 'is-rep'" :if="countyHasRace() && countyMargin()">{{ countyMargin() }}</p>
+        </div>
+      </div>
+
+      <div :if="countyHasRace()">
+        <div class="vs-share" role="img" aria-label="Share of the two-party vote" :if="countyHasSides()">
+          <span class="vs-share-dem" :style="countyDemBar()"></span>
+        </div>
+        <dl class="vs-sides">
+          <div>
+            <dt><i class="is-dem vs-dot"></i>{{ countyDemName() }}</dt>
+            <dd><b class="vs-pct">{{ countyDemPercent() }}</b><span class="vs-count">{{ countyDem() }}</span></dd>
+          </div>
+          <div>
+            <dt><i class="is-rep vs-dot"></i>{{ countyRepName() }}</dt>
+            <dd><b class="vs-pct">{{ countyRepPercent() }}</b><span class="vs-count">{{ countyRep() }}</span></dd>
+          </div>
+        </dl>
+        <p class="vs-small">{{ countyTotal() }}<span :if="countyCounted()">. {{ countyCounted() }}</span></p>
+        <p class="vs-small" :if="countyNotes()">{{ countyNotes() }}</p>
+      </div>
+      <p class="vs-status" :if="!countyHasRace()">{{ countyAbsent() }}</p>
+    </section>
+
+    {{-- What the colours and heights mean, and where the numbers are from. --}}
+    <aside class="vs-key vs-panel" aria-label="Legend">
+      <div class="vs-key-row">
+        <span class="vs-eyebrow">Colour: the margin</span>
+      </div>
+      <div class="vs-scale" role="img" aria-label="Colour scale from a Republican lead of 50 points or more, through even, to a Democratic lead of 50 points or more"></div>
+      <div class="vs-scale-ends">
+        <span>R+50</span>
+        <span>Even</span>
+        <span>D+50</span>
+      </div>
+      <ul class="vs-chips vs-more">
+        <li><i class="is-grey"></i>No Democrat against a Republican</li>
+        <li><i class="is-flat"></i>No race</li>
+      </ul>
+
+      <div class="vs-key-height vs-key-row">
+        <span class="vs-eyebrow">Height</span>
+        <div class="vs-seg vs-seg-small" role="group" aria-label="Height">
+          <button type="button" :class="metric() === 'votes' ? 'is-on' : ''" :aria-pressed="metric() === 'votes' ? 'true' : 'false'" @click="chooseMetric('votes')">Votes</button>
+          <button type="button" :class="metric() === 'density' ? 'is-on' : ''" :aria-pressed="metric() === 'density' ? 'true' : 'false'" @click="chooseMetric('density')">Per sq mi</button>
+        </div>
+        <button type="button" class="vs-reset" @click="resetView()">Reset</button>
+      </div>
+
+      <p class="vs-small vs-source" :if="loaded() && hasResults()">
+        <span class="vs-badge" :class="official() ? 'is-official' : ''">{{ sourceBadge() }}</span>
+        <span>{{ sourceLine() }}</span>
+        <span class="vs-credit vs-more">{{ sourceCredit() }}</span>
+      </p>
+      <p class="vs-small vs-warn" :if="loaded() && !hasWebgl()">This browser has no WebGL, so counties are drawn flat.</p>
+    </aside>
+  </div>
 </div>
 
 <style>
@@ -609,6 +680,10 @@ onDestroy(() => {
   font: inherit;
   color: inherit;
   cursor: pointer;
+  /* A tap is a tap: no wait to see whether it is the first of two. */
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .vs-stage :focus-visible {
@@ -759,6 +834,11 @@ onDestroy(() => {
 .vs-seg button.is-on {
   color: #0b0f17;
   background: #f1f4f9;
+}
+
+/* An office that was not part of the election shown. */
+.vs-seg button.is-off {
+  display: none;
 }
 
 .vs-seg-small {
@@ -1012,6 +1092,22 @@ label.vs-states-title {
   border-color: var(--vs-line-strong);
 }
 
+/* What opens over the map fades in from where it will rest. */
+.vs-states,
+.vs-table,
+.vs-share-menu {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1), overlay 0.26s allow-discrete, display 0.26s allow-discrete;
+}
+
+.vs-states:popover-open,
+.vs-table:popover-open,
+.vs-share-menu:popover-open {
+  opacity: 1;
+  transform: none;
+}
+
 /* --- The table of results --- */
 
 .vs-table {
@@ -1150,6 +1246,19 @@ label.vs-states-title {
 .vs-totals {
   top: calc(76px + var(--vs-t));
   left: var(--vs-l);
+}
+
+/* A panel arrives, rather than being there all at once. */
+.vs-panel,
+.vs-hint {
+  transition: opacity 0.2s ease, transform 0.2s ease, display 0.2s allow-discrete;
+}
+
+@starting-style {
+  .vs-panel {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
 .vs-county {
@@ -1543,7 +1652,7 @@ label.vs-states-title {
 
 .vs-hint {
   position: absolute;
-  bottom: calc(6px + var(--vs-b));
+  bottom: calc(68px + var(--vs-b));
   left: 50%;
   z-index: 1000;
   padding: 6px 14px;
@@ -1558,6 +1667,85 @@ label.vs-states-title {
   transition: opacity 0.4s ease;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+}
+
+/* --- Which election --- */
+
+/* On a wide screen what is in the dock sits where it always has, in the corners. */
+.vs-dock {
+  display: contents;
+}
+
+.vs-years {
+  display: flex;
+  position: absolute;
+  bottom: var(--vs-b);
+  left: 50%;
+  z-index: 1000;
+  gap: 2px;
+  padding: 3px;
+  background: var(--vs-panel);
+  border: 1px solid var(--vs-line);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+}
+
+.vs-years button {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  justify-items: center;
+  min-width: 62px;
+  padding: 6px 8px 5px;
+  color: var(--vs-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.vs-years b {
+  font-weight: 650;
+  font-size: 14px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.vs-years span {
+  color: var(--vs-faint);
+  font-weight: 600;
+  font-size: 9.5px;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vs-years button:hover {
+  color: var(--vs-text);
+}
+
+.vs-years button.is-on {
+  color: #0b0f17;
+  background: #f1f4f9;
+}
+
+.vs-years button.is-on span {
+  color: #4a5567;
+}
+
+/* Its results are on their way. */
+.vs-years button.is-busy b {
+  animation: vs-wait 0.9s ease-in-out infinite;
+}
+
+@keyframes vs-wait {
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .vs-hint.is-gone {
@@ -1598,7 +1786,8 @@ label.vs-states-title {
     display: grid;
     grid-row: 2;
     grid-column: 1 / -1;
-    grid-template-columns: repeat(4, 1fr);
+    grid-auto-columns: 1fr;
+    grid-auto-flow: column;
   }
 
   .vs-offices button {
@@ -1607,6 +1796,49 @@ label.vs-states-title {
 
   .vs-totals {
     top: calc(122px + var(--vs-t));
+  }
+}
+
+/* --- No room for the corners: the dock is one stack along the bottom --- */
+
+@media (max-width: 1099px) and (min-height: 521px) {
+  .vs-dock {
+    display: grid;
+    position: absolute;
+    inset: auto var(--vs-r) var(--vs-b) var(--vs-l);
+    z-index: 1000;
+    gap: 8px;
+    grid-template-columns: 1fr 1fr;
+    align-items: end;
+    pointer-events: none;
+  }
+
+  .vs-dock > * {
+    position: relative;
+    inset: auto;
+    min-width: 0;
+    pointer-events: auto;
+  }
+
+  .vs-dock .vs-hint,
+  .vs-dock .vs-years {
+    grid-column: 1 / -1;
+    justify-self: center;
+    transform: none;
+  }
+
+  .vs-dock .vs-hint {
+    pointer-events: none;
+  }
+
+  .vs-dock .vs-county {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .vs-dock .vs-key {
+    grid-column: 2;
+    justify-self: end;
   }
 }
 
@@ -1647,8 +1879,14 @@ label.vs-states-title {
     border-radius: 14px;
   }
 
+  /* The switcher is as tall here as under a finger, so what is below it
+     starts at the same place whatever is pointing. */
+  .vs-offices button {
+    min-height: 44px;
+  }
+
   .vs-totals {
-    top: calc(106px + var(--vs-t));
+    top: calc(124px + var(--vs-t));
     right: var(--vs-r);
   }
 
@@ -1673,9 +1911,23 @@ label.vs-states-title {
   }
 
   .vs-sides {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 10px;
     margin-top: 8px;
+  }
+
+  /* A long name gives way to its share, never the other way about. */
+  .vs-sides dt > i {
+    flex: none;
+  }
+
+  .vs-sides dt {
+    display: block;
+  }
+
+  .vs-sides dt .vs-dot {
+    display: inline-block;
+    margin-right: 8px;
   }
 
   .vs-count {
@@ -1702,20 +1954,36 @@ label.vs-states-title {
     display: block;
   }
 
+  .vs-dock {
+    grid-template-columns: 1fr;
+  }
+
+  .vs-dock .vs-years,
+  .vs-dock .vs-county,
+  .vs-dock .vs-key {
+    grid-column: 1;
+    justify-self: stretch;
+  }
+
+  .vs-years button {
+    min-width: 0;
+    padding-right: 2px;
+    padding-left: 2px;
+  }
+
+  .vs-years span {
+    font-size: 8.5px;
+    letter-spacing: 0.03em;
+  }
+
   .vs-key {
-    right: var(--vs-r);
-    bottom: var(--vs-b);
-    left: var(--vs-l);
     padding: 10px 14px 12px;
   }
 
-  /* A pinned county takes the legend's place, and gives it back when closed. */
-  .has-pin .vs-key {
+  /* A place takes the legend's room, and gives it back when it is let go:
+     the years stay, so one county can be followed from election to election. */
+  .vs-stage:has(.vs-county) .vs-key {
     display: none;
-  }
-
-  .has-pin .vs-county {
-    bottom: var(--vs-b);
   }
 
   .vs-key > .vs-key-row:first-child {
@@ -1735,11 +2003,6 @@ label.vs-states-title {
     margin-top: 8px;
   }
 
-  .vs-county {
-    right: var(--vs-r);
-    bottom: calc(126px + var(--vs-b));
-  }
-
   .vs-county .vs-count {
     display: inline;
     min-width: 0;
@@ -1751,16 +2014,28 @@ label.vs-states-title {
   }
 
   .vs-hint {
-    bottom: calc(134px + var(--vs-b));
     font-size: 12px;
   }
 
+  /* What opens over the map comes up from the bottom, under the thumb. */
   .vs-states,
   .vs-table,
   .vs-share-menu {
-    inset: calc(56px + var(--vs-t)) var(--vs-r) auto var(--vs-l);
+    inset: auto 0 0;
     width: auto;
-    max-height: calc(100dvh - 72px - var(--vs-t) - var(--vs-b));
+    max-width: none;
+    max-height: min(84dvh, calc(100dvh - 56px - var(--vs-t)));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    border-width: 1px 0 0;
+    border-radius: 20px 20px 0 0;
+    transform: translateY(24px);
+    overscroll-behavior: contain;
+  }
+
+  .vs-states::backdrop,
+  .vs-table::backdrop,
+  .vs-share-menu::backdrop {
+    background: rgba(5, 8, 13, 0.55);
   }
 
   .vs-btn {
@@ -1779,9 +2054,26 @@ label.vs-states-title {
 /* --- Under a finger: everything to press is at least 40px tall --- */
 
 @media (pointer: coarse) {
+  /* Glass over a moving map is drawn again every frame, and a phone feels
+     it. Panels there are nearly solid, with nothing behind them to blur. */
+  .vs-stage {
+    --vs-panel: rgba(14, 19, 30, 0.9);
+  }
+
+  .vs-panel,
+  .vs-seg,
+  .vs-btn,
+  .vs-years,
+  .vs-hint,
+  .vs-controls {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
   .vs-seg button,
-  .vs-btn {
-    min-height: 40px;
+  .vs-btn,
+  .vs-years button {
+    min-height: 44px;
   }
 
   .vs-btn-share {
@@ -1841,6 +2133,13 @@ label.vs-states-title {
   }
 }
 
+/* A tablet under a finger: the taller switcher sets the totals lower. */
+@media (pointer: coarse) and (min-width: 721px) and (max-width: 1040px) and (min-height: 521px) {
+  .vs-totals {
+    top: calc(134px + var(--vs-t));
+  }
+}
+
 /* --- A phone on its side: one row across the top, small panels in the corners --- */
 
 @media (max-height: 520px) {
@@ -1859,6 +2158,7 @@ label.vs-states-title {
   }
 
   .vs-offices button {
+    min-height: 0;
     padding: 6px 9px;
     font-size: 12.5px;
   }
@@ -1936,10 +2236,9 @@ label.vs-states-title {
     overflow-y: auto;
   }
 
-  .vs-key,
-  .has-pin .vs-key {
-    display: block;
+  .vs-key {
     left: auto;
+    width: auto;
     padding: 10px 12px;
   }
 
@@ -1960,8 +2259,7 @@ label.vs-states-title {
     display: none;
   }
 
-  .vs-county,
-  .has-pin .vs-county {
+  .vs-county {
     right: auto;
     bottom: var(--vs-b);
   }
@@ -1987,6 +2285,33 @@ label.vs-states-title {
   }
 
   .vs-hint {
+    display: none;
+  }
+
+  /* Room for three: the election shown, and the ones either side of it,
+     set a little left of the middle, clear of the legend. */
+  .vs-years {
+    left: 46%;
+  }
+
+  .vs-years button {
+    display: none;
+    min-width: 44px;
+    min-height: 0;
+    padding: 5px 6px;
+  }
+
+  .vs-key-height .vs-eyebrow {
+    display: none;
+  }
+
+  .vs-years button.is-on,
+  .vs-years button.is-on + button,
+  .vs-years button:has(+ .is-on) {
+    display: grid;
+  }
+
+  .vs-years span {
     display: none;
   }
 
@@ -2016,9 +2341,37 @@ label.vs-states-title {
   }
 }
 
+@starting-style {
+  .vs-states:popover-open,
+  .vs-table:popover-open,
+  .vs-share-menu:popover-open {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (max-width: 720px) and (min-height: 521px) {
+  @starting-style {
+    .vs-states:popover-open,
+    .vs-table:popover-open,
+    .vs-share-menu:popover-open {
+      opacity: 1;
+      transform: translateY(100%);
+    }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .vs-veil-mark rect {
+  .vs-veil-mark rect,
+  .vs-years button.is-busy b {
     animation: none;
+  }
+
+  .vs-panel,
+  .vs-states,
+  .vs-table,
+  .vs-share-menu {
+    transition: none;
   }
 
   .vs-share-dem,

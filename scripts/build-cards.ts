@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
 import { createImageData, encode } from 'ts-images'
+import { LATEST } from '../resources/data/elections'
 import { MARGIN_STOPS, NEUTRAL_COLOR } from '../resources/functions/election'
 
 const ROOT = join(import.meta.dir, '..')
@@ -193,7 +194,7 @@ function ringsOf(county: CountyFeature): Ring[][] {
  */
 async function draw(name: string, counties: CountyFeature[], results: ResultsFile | null, width: number, lift?: number): Promise<void> {
   const TILT = 0.6
-  const rows = results?.top.counties ?? {}
+  const rows = results?.top?.counties ?? {}
   let west = Infinity
   let east = -Infinity
   let south = Infinity
@@ -281,7 +282,7 @@ export async function buildCards(): Promise<number> {
   const states = read<{ features: StateFeature[] }>('public/data/geo/states.json')?.features
   if (!counties || !states)
     throw new Error('The shapes are not built. Run `bun run data:geo` first.')
-  const results = read<ResultsFile>('public/data/results/2026.json')
+  const results = read<ResultsFile>(`public/data/results/${LATEST.year}.json`)
   mkdirSync(OUT, { recursive: true })
 
   await icon('apple-touch-icon.png', 180)

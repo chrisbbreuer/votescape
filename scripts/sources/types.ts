@@ -6,7 +6,7 @@
  * folder and one line in `scripts/build-results.ts`.
  */
 
-export type Office = 'house' | 'senate' | 'governor'
+export type Office = 'president' | 'house' | 'senate' | 'governor'
 
 /** Democratic, Republican, or anyone else. */
 export type Party = 'D' | 'R' | 'O'
@@ -72,10 +72,19 @@ export interface Contest extends ContestRef {
   units: UnitCount[]
   /** ISO time the source last changed it. */
   updatedAt: string
+  /**
+   * The source has this contest for the state as a whole and for no county
+   * the map draws: Alaska before its present districts, a state reported by
+   * counties that no longer exist. Its votes count towards the state and
+   * stand on no county.
+   */
+  countyless?: boolean
 }
 
 export interface ResultsSource {
   id: string
+  /** Election day, `2024-11-05`. */
+  election: string
   /** For the line under the map: where these numbers come from. */
   label: string
   /** Whether the numbers are certified returns. */

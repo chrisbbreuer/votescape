@@ -50,6 +50,8 @@ export interface StateSummary {
   winnerName?: string
   /** House seats by who won them; `open` is not called yet. */
   seats?: { dem: number, rep: number, other: number, open: number }
+  /** Counted for the state as a whole, with no county on the map to stand on. */
+  countyless?: boolean
 }
 
 export interface OfficeResults {
@@ -57,14 +59,19 @@ export interface OfficeResults {
   states: Record<string, StateSummary>
 }
 
-export type TopOffice = Office
+export type TopOffice = Exclude<Office, 'president'>
 
 export interface Results {
+  /** In a presidential year. */
+  president?: OfficeResults
   house: OfficeResults
   senate: OfficeResults
   governor: OfficeResults
-  /** Each state's most prominent race: Senate, else governor, else House. */
-  top: OfficeResults & { office: Record<string, TopOffice> }
+  /**
+   * Each state's most prominent race: Senate, else governor, else House. Left
+   * out of a presidential year, where that is the presidency everywhere.
+   */
+  top?: OfficeResults & { office: Record<string, TopOffice> }
 }
 
 /** Who is counted on each side of a contest. */
@@ -270,6 +277,10 @@ export function rollupOffice(contests: Contest[], towns: Record<string, string>,
       counties.set(id, county)
       counted += unit.total
     }
+    // A state is counted as a whole only where none of its contests is by county.
+    summary.countyless = (summary.countyless ?? true) && !!contest.countyless && counted === 0
+    if (contest.countyless && counted === 0)
+      continue
     // Overseas and other ballots given to no county are a fraction of a
     // percent; more than that missing means a level was misread.
     if (statewide.total > 0 && Math.abs(statewide.total - counted) > Math.max(50, statewide.total * 0.02))
@@ -281,21 +292,48 @@ export function rollupOffice(contests: Contest[], towns: Record<string, string>,
     const f = finish(running)
     rows[id] = [f.dem, f.rep, f.total, f.pct, f.flags, f.margin]
   }
-  for (const [fips, running] of states)
+  for (const [fips, running] of states) {
     Object.assign(summaries[fips]!, finish(running))
+    if (!summaries[fips]!.countyless)
+      delete summaries[fips]!.countyless
+  }
 
   return { counties: rows, states: summaries, problems }
+}
+
+/**
+ * One contest a state for an office that fills one seat.
+ *
+ * A state can have two Senate elections on one ballot, the regular one and a
+ * special one for the other seat. Added together they would count every voter
+ * twice, so the regular one stands for the state; of two alike, the larger.
+ */
+export function oneEach(contests: Contest[]): Contest[] {
+  const total = (c: Contest): number => c.units.find(u => u.level === 'state')?.total ?? 0
+  const kept = new Map<string, Contest>()
+  for (const contest of contests) {
+    const held = kept.get(contest.stateFips)
+    if (!held || (held.special && !contest.special) || (held.special === contest.special && total(contest) > total(held)))
+      kept.set(contest.stateFips, contest)
+  }
+  return contests.filter(c => kept.get(c.stateFips) === c)
 }
 
 /** The whole election: each office, and each state's most prominent race. */
 export function rollup(contests: Contest[], towns: Record<string, string>, known: Set<string>): { results: Results, problems: RollupProblem[] } {
   const by = (office: Office): Contest[] => contests.filter(c => c.office === office)
+  const president = by('president').length ? rollupOffice(oneEach(by('president')), towns, known) : null
   const house = rollupOffice(by('house'), towns, known)
-  const senate = rollupOffice(by('senate'), towns, known)
-  const governor = rollupOffice(by('governor'), towns, known)
+  const senate = rollupOffice(oneEach(by('senate')), towns, known)
+  const governor = rollupOffice(oneEach(by('governor')), towns, known)
   const offices = { house, senate, governor }
+  const strip = ({ counties, states }: OfficeResults): OfficeResults => ({ counties, states })
+  const problems = [...(president?.problems ?? []), ...house.problems, ...senate.problems, ...governor.problems]
 
-  const top: Results['top'] = { counties: {}, states: {}, office: {} }
+  if (president)
+    return { results: { president: strip(president), house: strip(house), senate: strip(senate), governor: strip(governor) }, problems }
+
+  const top: NonNullable<Results['top']> = { counties: {}, states: {}, office: {} }
   const all = new Set([...Object.keys(house.states), ...Object.keys(senate.states), ...Object.keys(governor.states)])
   for (const fips of all) {
     const office: TopOffice = senate.states[fips] ? 'senate' : governor.states[fips] ? 'governor' : 'house'
@@ -309,9 +347,5 @@ export function rollup(contests: Contest[], towns: Record<string, string>, known
     }
   }
 
-  const strip = ({ counties, states }: OfficeResults): OfficeResults => ({ counties, states })
-  return {
-    results: { house: strip(house), senate: strip(senate), governor: strip(governor), top },
-    problems: [...house.problems, ...senate.problems, ...governor.problems],
-  }
+  return { results: { house: strip(house), senate: strip(senate), governor: strip(governor), top }, problems }
 }

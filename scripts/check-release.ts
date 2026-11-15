@@ -12,6 +12,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
+import { ELECTIONS, LATEST } from '../resources/data/elections'
 
 const root = join(import.meta.dir, '..')
 const problems: string[] = []
@@ -50,7 +51,12 @@ interface Results {
 
 const counties = await read<Geo>('public/data/geo/counties.json')
 const states = await read<Geo>('public/data/geo/states.json')
-const results = await read<Results>('public/data/results/2026.json')
+const results = await read<Results>(`public/data/results/${LATEST.year}.json`)
+
+// An earlier election with no file is not offered on the page: the site works, with less in it.
+const absent = ELECTIONS.filter(e => e !== LATEST && !existsSync(join(root, `public/data/results/${e.year}.json`))).map(e => e.year)
+if (absent.length)
+  warnings.push(`no results for ${absent.join(', ')}, so the page will not offer ${absent.length > 1 ? 'them' : 'it'}: \`bun run data:history\` first`)
 
 if (counties && counties.features.length !== 3153)
   problems.push(`counties.json has ${counties.features.length} shapes, not 3,153: run \`bun run data:geo\``)

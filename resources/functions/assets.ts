@@ -9,6 +9,7 @@
 import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
+import { ELECTIONS, LATEST } from '../data/elections'
 
 /** `path` under public/, with `?v=` from when it last changed and how big it is. */
 export function versioned(path: string): string {
@@ -22,11 +23,21 @@ export function versioned(path: string): string {
   }
 }
 
-/** The three files the map draws from. */
-export function dataFiles(): { counties: string, states: string, results: string } {
+/**
+ * The files the map draws from: the shapes, the present election's results,
+ * and every election whose results have been built, by year.
+ */
+export function dataFiles(): { counties: string, states: string, results: string, years: Record<number, string> } {
+  const years: Record<number, string> = {}
+  for (const election of ELECTIONS) {
+    const file = versioned(`/data/results/${election.year}.json`)
+    if (file.includes('?v='))
+      years[election.year] = file
+  }
   return {
     counties: versioned('/data/geo/counties.json'),
     states: versioned('/data/geo/states.json'),
-    results: versioned('/data/results/2026.json'),
+    results: versioned(`/data/results/${LATEST.year}.json`),
+    years,
   }
 }

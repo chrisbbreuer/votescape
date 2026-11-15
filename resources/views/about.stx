@@ -7,7 +7,7 @@
  * are from.
  */
 const pageTitle = 'About the map'
-const pageDescription = 'How to read Votescape: what the heights and colours mean, how counties are counted, and where the 2026 midterm results come from.'
+const pageDescription = 'How to read Votescape: what the heights and colours mean, how counties are counted, and where the results of each election from 2016 to 2026 come from.'
 const canonicalPath = '/about'
 </script>
 
@@ -68,6 +68,12 @@ const canonicalPath = '/about'
     </section>
 
     <section>
+      <h2>Six elections</h2>
+      <p>The row of years along the bottom of the map changes the election: the presidential elections of 2016, 2020 and 2024, and the midterms of 2018, 2022 and 2026. A presidential year adds the presidency to the offices. A county you have chosen stays chosen as the year changes, so one place can be followed through all six.</p>
+      <p>The shapes are today's, and two states were not always counted by them. Alaska's results before 2024 are not by the house districts drawn here, and Connecticut's for 2016 are by counties it has since abolished. For those years each state's total is in the panel and the table, and the state itself lies flat.</p>
+    </section>
+
+    <section>
       <h2>How places are counted</h2>
       <ul class="va-notes">
         <li><b>Alaska</b> is drawn by its 40 state house districts, which is how its results are reported. Its boroughs are not.</li>
@@ -83,7 +89,8 @@ const canonicalPath = '/about'
 
     <section>
       <h2>The numbers</h2>
-      <p>These are unofficial results, and they will change. Some races are not called, a few go to runoffs, and no state has certified its count. The map says when its numbers were last updated, in the legend.</p>
+      <p>The 2026 results are unofficial, and they will change. Some races are not called, a few go to runoffs, and no state has certified its count. The map says when its numbers were last updated, in the legend.</p>
+      <p>The 2016 presidential results are certified returns, from the MIT Election Data and Science Lab. The elections from 2018 to 2024 are the final counts as The Associated Press reported them, which can differ by a few votes from what each state later certified. The legend names the source of whatever is shown.</p>
       <p>Every number on the map is also in a table: choose Table at the top of the map for each state, or each county in a state, as rows you can read or have read to you. Places finds any county by name.</p>
       <p>The shapes are the U.S. Census Bureau's 2024 cartographic boundary files, laid out in the Albers USA projection, with Alaska and Hawaii moved and resized to fit.</p>
     </section>

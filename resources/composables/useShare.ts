@@ -6,12 +6,16 @@
  * what to share.
  */
 
-import type { Metric, OfficeKey } from '../functions/election'
+import type { View } from '../functions/election'
+import { viewQuery } from '../functions/election'
 
 /** What the picture says: one place's result for one office. */
 export interface ShareCard {
   /** The office, as the panels name it. */
   eyebrow: string
+  /** The election, for the corner: `2024 presidential`. */
+  election: string
+  year: number
   /** The place: `Harris County`, `Texas`, `United States`. */
   title: string
   /** The state a county is in. Empty for a state or the country. */
@@ -29,21 +33,13 @@ export interface ShareCard {
   footer: string
 }
 
-/** The address of this view: the page, with the office, height and county it shows. */
-export function viewUrl(office: OfficeKey, metric: Metric, county: string): string {
-  const query = new URLSearchParams()
-  if (office !== 'house')
-    query.set('office', office)
-  if (metric !== 'votes')
-    query.set('by', metric)
-  if (county)
-    query.set('county', county)
-  const text = query.toString()
-  return `${location.origin}${location.pathname}${text ? `?${text}` : ''}`
+/** The address of this view: the page, with the election, office, height and county it shows. */
+export function viewUrl(view: View): string {
+  return `${location.origin}${location.pathname}${viewQuery(view)}`
 }
 
 /** Where a link can be posted, each as an address that opens that site's own form. */
-export function shareTargets(text: string, url: string): Record<string, string> {
+export function shareTargets(text: string, url: string, subject: string): Record<string, string> {
   const t = encodeURIComponent(text)
   const u = encodeURIComponent(url)
   const both = encodeURIComponent(`${text} ${url}`)
@@ -56,7 +52,7 @@ export function shareTargets(text: string, url: string): Record<string, string> 
     threads: `https://www.threads.net/intent/post?text=${both}`,
     whatsapp: `https://wa.me/?text=${both}`,
     telegram: `https://t.me/share/url?url=${u}&text=${t}`,
-    email: `mailto:?subject=${encodeURIComponent('The 2026 midterms, county by county')}&body=${both}`,
+    email: `mailto:?subject=${encodeURIComponent(subject)}&body=${both}`,
   }
 }
 
@@ -172,7 +168,7 @@ export function drawShareCard(card: ShareCard): HTMLCanvasElement {
   ctx.textAlign = 'right'
   ctx.fillStyle = '#9aa5b8'
   ctx.font = `500 26px ${FONT}`
-  ctx.fillText('2026 midterms', WIDTH - pad, 98)
+  ctx.fillText(card.election, WIDTH - pad, 98)
   ctx.textAlign = 'left'
 
   // What and where.
@@ -243,7 +239,7 @@ export function drawShareCard(card: ShareCard): HTMLCanvasElement {
   else {
     ctx.fillStyle = '#c6cedb'
     ctx.font = `500 34px ${FONT}`
-    ctx.fillText(card.hasRace ? 'Votes were cast here, but not between a Democrat and a Republican.' : 'This office was not on the ballot here in 2026.', pad, 440)
+    ctx.fillText(card.hasRace ? 'Votes were cast here, but not between a Democrat and a Republican.' : `This office was not on the ballot here in ${card.year}.`, pad, 440)
   }
 
   ctx.fillStyle = 'rgba(148, 163, 184, 0.22)'

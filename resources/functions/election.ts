@@ -7,14 +7,17 @@
  */
 
 import type { Row, StateSummary } from '../../scripts/lib/rollup'
+import type { OfficeKey } from '../data/elections'
 import { FLAG } from '../../scripts/lib/rollup'
+import { electionFor, LATEST } from '../data/elections'
 
-export type OfficeKey = 'house' | 'senate' | 'governor' | 'top'
+export type { OfficeKey } from '../data/elections'
 export type Metric = 'votes' | 'density'
 
-export const OFFICE_KEYS: OfficeKey[] = ['house', 'senate', 'governor', 'top']
+export const OFFICE_KEYS: OfficeKey[] = ['president', 'house', 'senate', 'governor', 'top']
 
 export const OFFICE_LABELS: Record<OfficeKey, string> = {
+  president: 'President',
   house: 'U.S. House',
   senate: 'U.S. Senate',
   governor: 'Governor',
@@ -22,11 +25,32 @@ export const OFFICE_LABELS: Record<OfficeKey, string> = {
 }
 
 export interface ResultsFile {
-  meta: { election: string, source: string, sourceLabel: string, official: boolean, updatedAt: string, builtAt: string, contests: number }
+  meta: {
+    election: string
+    year?: number
+    source: string
+    sourceLabel: string
+    official: boolean
+    /** The count is over. Left out of a file built before there was more than one election. */
+    final?: boolean
+    updatedAt: string
+    builtAt: string
+    contests: number
+  }
+  /** In a presidential year. */
+  president?: OfficeData
   house: OfficeData
   senate: OfficeData
   governor: OfficeData
-  top: OfficeData & { office: Record<string, 'house' | 'senate' | 'governor'> }
+  /** In a midterm year. */
+  top?: OfficeData & { office: Record<string, 'house' | 'senate' | 'governor'> }
+}
+
+const NO_DATA: OfficeData = { counties: {}, states: {} }
+
+/** An election's numbers for an office: empty where the office was not part of it. */
+export function officeData(results: ResultsFile | null | undefined, office: OfficeKey): OfficeData {
+  return results?.[office] ?? NO_DATA
 }
 
 export interface OfficeData {
@@ -56,12 +80,15 @@ const KM2_PER_MI2 = 2.589988
  * read: `v_` votes, `d_` votes per square mile, `m_` margin, and `f_` — 0
  * where the office was not on the ballot there, 1 where the margin colours
  * it, 2 where votes were cast but the margin says nothing.
+ *
+ * Every office is written every time, so joining another election's results
+ * leaves nothing of the one before.
  */
 export function joinResults(counties: CountyFeature[], results: ResultsFile): void {
   for (const county of counties) {
     const p = county.properties
     for (const office of OFFICE_KEYS) {
-      const row = results[office].counties[county.id]
+      const row = officeData(results, office).counties[county.id]
       const votes = row?.[2] ?? 0
       p[`v_${office}`] = votes
       p[`d_${office}`] = p.a > 0 ? Math.round((votes / (p.a / KM2_PER_MI2)) * 100) / 100 : 0
@@ -217,4 +244,69 @@ export function flagNotes(flags: number, office: OfficeKey): string[] {
 /** Text safe to put inside markup. */
 export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[c]!)
+}
+
+// --- What is shown, as an address --------------------------------------------
+
+/** What the map is showing: an election, an office in it, what height means, and a pinned county. */
+export interface View {
+  year: number
+  office: OfficeKey
+  metric: Metric
+  county: string
+}
+
+/**
+ * A view from an address's query. An election that is not there, or an
+ * office that was not part of it, gives way to the present election and to
+ * the office that election opens on.
+ */
+export function parseView(search: string): View {
+  const query = new URLSearchParams(search)
+  const election = electionFor(query.get('year')) ?? LATEST
+  const office = query.get('office') as OfficeKey | null
+  return {
+    year: election.year,
+    office: office && election.offices.includes(office) ? office : election.offices[0]!,
+    metric: query.get('by') === 'density' ? 'density' : 'votes',
+    county: query.get('county') ?? '',
+  }
+}
+
+/** A view as a query, with what is the default left out. Other keys of `search` are kept. */
+export function viewQuery(view: View, search = ''): string {
+  const query = new URLSearchParams(search)
+  const election = electionFor(view.year) ?? LATEST
+  const put = (key: string, value: string): void => {
+    if (value)
+      query.set(key, value)
+    else
+      query.delete(key)
+  }
+  put('year', election === LATEST ? '' : String(election.year))
+  put('office', view.office === election.offices[0] ? '' : view.office)
+  put('by', view.metric === 'votes' ? '' : view.metric)
+  put('county', view.county)
+  const text = query.toString()
+  return text ? `?${text}` : ''
+}
+
+// --- Telling a trackpad from a wheel -------------------------------------------
+
+/**
+ * Whether a wheel event is two fingers on a trackpad rather than a wheel.
+ *
+ * Nothing says so outright. A wheel turns on one axis and in notches: where a
+ * browser still gives the old `wheelDeltaY`, a notch is 120 there whatever the
+ * pixels come to, while a trackpad's is exactly three times its pixels. Where
+ * it does not, a wheel counts in lines, or in pixels by the hundred.
+ */
+export function fromTrackpad(e: { deltaX: number, deltaY: number, deltaMode: number, wheelDeltaY?: number }): boolean {
+  if (e.deltaMode !== 0)
+    return false
+  if (e.deltaX !== 0)
+    return true
+  if (e.wheelDeltaY)
+    return e.wheelDeltaY === -3 * e.deltaY
+  return Math.abs(e.deltaY) < 50
 }
