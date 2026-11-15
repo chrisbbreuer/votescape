@@ -279,10 +279,13 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
   const home = (): { center: [number, number], zoom: number } => {
     const bounds = focus ? focus.properties.b : unionBounds(states)
     if (narrow()) {
-      // Fitted across nearly the whole width, and looked at a little north of
-      // its middle, which sets it lower on screen: clear of the totals above.
-      const view = viewFor(bounds, el.clientWidth, el.clientHeight, PITCH, focus ? 0.72 : 0.96, 0.34)
-      return { center: [view.center[0] + (bounds[3] - bounds[1]) * (focus ? 0.14 : 0.38), view.center[1]], zoom: view.zoom }
+      // Fitted across nearly the whole width, and looked at north of its
+      // middle, which sets it lower on screen: in the room between the totals
+      // above and the years below. The country is also looked at a little
+      // west of its middle, so the Pacific's towers, the tallest there are,
+      // stand in from the edge and clear of the totals.
+      const view = viewFor(bounds, el.clientWidth, el.clientHeight, PITCH, focus ? 0.72 : 0.92, 0.34)
+      return { center: [view.center[0] + (bounds[3] - bounds[1]) * (focus ? 0.2 : 0.56), view.center[1] - (bounds[2] - bounds[0]) * (focus ? 0 : 0.035)], zoom: view.zoom }
     }
     if (short()) {
       // Little height to give: fitted to it, and set to the right of the
@@ -327,7 +330,7 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
   /** Metres to a unit of the metric, for the tallest prism to stand a share of the view's height. */
   const scale = (): number => {
     const largest = scope().reduce((max, c) => Math.max(max, heightValue(c, office, metric)), 0)
-    return metresPerUnit(largest, home().zoom, el.clientHeight * (narrow() ? 0.21 : focus ? 0.34 : 0.27))
+    return metresPerUnit(largest, home().zoom, el.clientHeight * (narrow() ? 0.2 : focus ? 0.34 : 0.27))
   }
 
   // --- Roof labels ---

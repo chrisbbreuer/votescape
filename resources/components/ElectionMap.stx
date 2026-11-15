@@ -37,6 +37,7 @@ import { mountElectionMap, readView, runWhenMapReady, writeView } from '../compo
 import { reportError, startErrorReporting } from '../composables/useErrorReporting'
 import { closePopover, copyText, nativeShareAvailable, saveShareCard, shareNative, shareTargets, viewUrl } from '../composables/useShare'
 import { formatMargin, formatNumber } from '../functions/election'
+import { officeFromLabel, raceInfo } from '../functions/races'
 
 const election = state<Election>(LATEST)
 const office = state<OfficeKey>(LATEST.offices[0])
@@ -136,6 +137,32 @@ const seatsNote = derived(() => {
   const called = open > 0 ? `${open} not called. ` : ''
   return seatCount() > 1 ? `${called}${majority} of ${seatCount()} seats is a majority.` : called.trim()
 })
+
+// --- What the race was, and where to read about it. ---
+
+const race = derived(() => {
+  const sum = totals()
+  const key = officeFromLabel(sum?.office ?? '')
+  return sum?.hasRace && key ? raceInfo(election(), key, sum.title === 'United States' ? '' : sum.title) : null
+})
+const raceText = derived(() => race()?.text ?? '')
+const raceDate = derived(() => (race() ? `Election day: ${race()?.date}` : ''))
+const raceLabel = derived(() => race()?.links[0]?.label ?? '')
+const raceHref = derived(() => race()?.links[0]?.href ?? '')
+const raceTitle = derived(() => race()?.links[0]?.title ?? '')
+const raceLabel2 = derived(() => race()?.links[1]?.label ?? '')
+const raceHref2 = derived(() => race()?.links[1]?.href ?? '')
+const raceTitle2 = derived(() => race()?.links[1]?.title ?? '')
+
+// The county's own state's race: a county has no article, its state's race does.
+const countyRace = derived(() => {
+  const place = county()
+  const key = officeFromLabel(place?.office ?? '')
+  return place?.hasRace && key && key !== 'top' ? raceInfo(election(), key, place.state).links[0] ?? null : null
+})
+const countyRaceHref = derived(() => countyRace()?.href ?? '')
+const countyRaceTitle = derived(() => countyRace()?.title ?? '')
+const countyRaceLabel = derived(() => (countyRace() ? `${county()?.state}'s race on Wikipedia` : ''))
 
 const sourceBadge = derived(() => (official() ? 'Certified' : final() ? 'Final count' : 'Unofficial'))
 const sourceLine = derived(() => (final() ? electionLabel() : updated() ? `Updated ${updated()}` : ''))
@@ -461,7 +488,7 @@ onDestroy(() => {
     <div class="vs-panel-head">
       <div>
         <p class="vs-eyebrow">{{ totalsOffice() }}</p>
-        <h2>{{ totalsTitle() }}</h2>
+        <h2>{{ totalsTitle() }}<span class="vs-badge vs-badge-phone" :class="official() ? 'is-official' : ''">{{ sourceBadge() }}</span></h2>
       </div>
       <div class="vs-panel-row vs-panel-side">
         <p class="vs-margin" :class="totalsLeansDem() ? 'is-dem' : 'is-rep'" :if="totalsHasRace() && totalsMargin()">{{ totalsMargin() }}</p>
@@ -504,6 +531,18 @@ onDestroy(() => {
       <p class="vs-more vs-small" :if="totalsNotes()">{{ totalsNotes() }}</p>
     </div>
     <p class="vs-status" :if="!totalsHasRace()">This office was not on the ballot here in {{ year() }}.</p>
+
+    {{-- What was being decided, and where to read about it. --}}
+    <div class="vs-more vs-race" :if="raceText()">
+      <p class="vs-eyebrow">About this race</p>
+      <p class="vs-small">{{ raceText() }}</p>
+      <p class="vs-small">{{ raceDate() }}</p>
+      <p class="vs-race-links">
+        <a :href="raceHref()" :title="raceTitle()" target="_blank" rel="noopener noreferrer">{{ raceLabel() }}<svg viewBox="0 0 16 16" width="11" height="11" fill="none" aria-hidden="true"><path d="M6 3.5H3.5v9h9V10M9 3.5h3.5V7M12.5 3.5 7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></a>
+        <a :if="raceHref2()" :href="raceHref2()" :title="raceTitle2()" target="_blank" rel="noopener noreferrer">{{ raceLabel2() }}<svg viewBox="0 0 16 16" width="11" height="11" fill="none" aria-hidden="true"><path d="M6 3.5H3.5v9h9V10M9 3.5h3.5V7M12.5 3.5 7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></a>
+      </p>
+      <p class="vs-phone-only vs-small">{{ sourceLine() }}<span :if="sourceLine() && sourceCredit()">. </span>{{ sourceCredit() }}</p>
+    </div>
   </section>
 
   <section class="vs-panel vs-totals" :if="loaded() && !hasResults() && !failed()">
@@ -585,6 +624,9 @@ onDestroy(() => {
         </dl>
         <p class="vs-small">{{ countyTotal() }}<span :if="countyCounted()">. {{ countyCounted() }}</span></p>
         <p class="vs-small" :if="countyNotes()">{{ countyNotes() }}</p>
+        <p class="vs-race-links" :if="countyRaceHref()">
+          <a :href="countyRaceHref()" :title="countyRaceTitle()" target="_blank" rel="noopener noreferrer">{{ countyRaceLabel() }}<svg viewBox="0 0 16 16" width="11" height="11" fill="none" aria-hidden="true"><path d="M6 3.5H3.5v9h9V10M9 3.5h3.5V7M12.5 3.5 7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></a>
+        </p>
       </div>
       <p class="vs-status" :if="!countyHasRace()">{{ countyAbsent() }}</p>
     </section>
@@ -1606,6 +1648,57 @@ label.vs-states-title {
   border-radius: 999px;
 }
 
+.vs-badge-phone,
+.vs-phone-only {
+  display: none;
+}
+
+/* What the race was: set apart from the count above it. */
+.vs-race {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--vs-line);
+}
+
+.vs-race .vs-small:first-of-type {
+  margin-top: 5px;
+  color: #c6cedb;
+}
+
+.vs-race .vs-small {
+  margin-top: 4px;
+}
+
+.vs-race-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 10px;
+}
+
+.vs-race-links a {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 10px;
+  color: var(--vs-text);
+  font-weight: 550;
+  font-size: 12.5px;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid var(--vs-line);
+  border-radius: 999px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.vs-race-links a:hover {
+  background: rgba(148, 163, 184, 0.16);
+  border-color: var(--vs-line-strong);
+}
+
+.vs-race-links svg {
+  color: var(--vs-muted);
+}
+
 .vs-badge.is-official {
   color: #86efac;
   background: rgba(34, 197, 94, 0.12);
@@ -1976,8 +2069,68 @@ label.vs-states-title {
     letter-spacing: 0.03em;
   }
 
+  /* The legend is two rows: the scale with its ends written on it, and the
+     height. Whether the count is official is said with the totals. */
   .vs-key {
-    padding: 10px 14px 12px;
+    padding: 8px 10px;
+  }
+
+  .vs-scale {
+    height: 24px;
+    border-radius: 9px;
+  }
+
+  .vs-scale-ends {
+    position: relative;
+    align-items: center;
+    height: 24px;
+    margin-top: -24px;
+    padding: 0 10px;
+    color: #fff;
+    font-weight: 650;
+    font-size: 11.5px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+  }
+
+  .vs-scale-ends span:nth-child(2) {
+    color: #2a2233;
+    text-shadow: none;
+  }
+
+  .vs-key .vs-source {
+    display: none;
+  }
+
+  .vs-badge-phone {
+    display: inline-block;
+    margin-left: 8px;
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+    vertical-align: 2px;
+  }
+
+  .vs-phone-only {
+    display: block;
+  }
+
+  .vs-race-links a {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+
+  /* Open, the totals are read, not looked through. */
+  .vs-totals.is-open {
+    background: rgba(13, 18, 28, 0.97);
+  }
+
+  /* An open panel can be longer than the room above the dock: it scrolls. */
+  .vs-totals.is-open,
+  .vs-dock .vs-county {
+    max-height: calc(100dvh - 300px - var(--vs-t) - var(--vs-b));
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   /* A place takes the legend's room, and gives it back when it is let go:
@@ -1996,11 +2149,12 @@ label.vs-states-title {
 
   .vs-key-height {
     margin-top: 8px;
-    padding-top: 8px;
+    padding-top: 0;
+    border-top: 0;
   }
 
-  .vs-source {
-    margin-top: 8px;
+  .vs-key-height .vs-eyebrow {
+    padding-left: 4px;
   }
 
   .vs-county .vs-count {
@@ -2331,6 +2485,11 @@ label.vs-states-title {
 /* --- A short window: the legend gives up its small print to the map --- */
 
 @media (max-height: 760px) and (min-height: 521px) and (min-width: 721px) {
+  /* Little height for the totals: the race keeps its links and loses its sentence. */
+  .vs-race .vs-small {
+    display: none;
+  }
+
   .vs-key .vs-more {
     display: none;
   }
