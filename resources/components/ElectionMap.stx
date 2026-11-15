@@ -25,6 +25,8 @@ export const heading = focusName ? `${focusName} in the 2026 midterms, county by
 import type { CountyInfo, ElectionMapHandle, Summary } from '../composables/useElectionMap'
 import type { Metric, OfficeKey } from '../functions/election'
 import { mountElectionMap, readView, runWhenMapReady, writeView } from '../composables/useElectionMap'
+import { reportError, startErrorReporting } from '../composables/useErrorReporting'
+import { closePopover, copyText, nativeShareAvailable, saveShareCard, shareNative, shareTargets, viewUrl } from '../composables/useShare'
 import { formatMargin, formatNumber } from '../functions/election'
 
 const office = state<OfficeKey>('house')
@@ -40,6 +42,11 @@ const hasWebgl = state(true)
 const official = state(false)
 const updated = state('')
 const sourceLabel = state('')
+// On a small screen the totals show their first lines until they are opened.
+const totalsOpen = state(false)
+const copied = state(false)
+const saved = state(false)
+const canShare = state(false)
 
 let handle: ElectionMapHandle | null = null
 let cancel: (() => void) | null = null
@@ -112,6 +119,64 @@ const sourceBadge = derived(() => (official() ? 'Certified' : 'Unofficial'))
 const sourceLine = derived(() => (updated() ? `Updated ${updated()}` : ''))
 const sourceCredit = derived(() => (sourceLabel() ? `Source: ${sourceLabel()}` : ''))
 
+// --- Sharing: the pinned county if there is one, else the totals shown. ---
+
+const shareUrl = derived(() => viewUrl(office(), metric(), selected()?.id ?? ''))
+const shareTitle = derived(() => (selected() ? `${selected()?.name}, ${selected()?.state}` : totalsTitle() === 'United States' || !totalsTitle() ? 'The United States' : totalsTitle()))
+const shareText = derived(() => {
+  const place = selected()
+  const margin = place ? formatMargin(place.margin) : totalsMargin()
+  const hasRace = place ? place.hasRace : totalsHasRace()
+  const what = place ? place.office : totalsOffice()
+  const lead = !hasRace || !margin
+    ? `${shareTitle()} in the 2026 midterms.`
+    : margin === 'Even'
+      ? `${shareTitle()} split evenly for ${what} in the 2026 midterms.`
+      : `${shareTitle()} went ${margin} for ${what} in the 2026 midterms.`
+  return `${lead} Every county in 3D, as tall as its votes.`
+})
+const shareLinks = derived(() => shareTargets(shareText(), shareUrl()))
+const shareX = derived(() => shareLinks().x)
+const shareFacebook = derived(() => shareLinks().facebook)
+const shareLinkedin = derived(() => shareLinks().linkedin)
+const shareReddit = derived(() => shareLinks().reddit)
+const shareBluesky = derived(() => shareLinks().bluesky)
+const shareThreads = derived(() => shareLinks().threads)
+const shareWhatsapp = derived(() => shareLinks().whatsapp)
+const shareTelegram = derived(() => shareLinks().telegram)
+const shareEmail = derived(() => shareLinks().email)
+const copyLabel = derived(() => (copied() ? 'Link copied' : 'Copy link'))
+const saveLabel = derived(() => (saved() ? 'Image saved' : 'Save image'))
+
+async function copyLink(): Promise<void> {
+  if (await copyText(shareUrl())) {
+    copied.set(true)
+    setTimeout(() => copied.set(false), 2000)
+  }
+}
+
+async function shareSheet(): Promise<void> {
+  if (await shareNative(shareTitle(), shareText(), shareUrl()))
+    closePopover('vs-share')
+}
+
+async function saveImage(): Promise<void> {
+  const place = selected()
+  const sum = totals()
+  const footer = `${official() ? 'Certified results' : 'Unofficial results'}${updated() ? `, updated ${updated()}` : ''}`
+  const card = place
+    ? { eyebrow: place.office, title: place.name, subtitle: place.state, hasRace: place.hasRace, margin: formatMargin(place.margin), leansDem: (place.margin ?? 0) > 0, demName: place.demName, repName: place.repName, dem: place.dem, rep: place.rep, total: place.total, footer }
+    : { eyebrow: sum?.office ?? '', title: sum?.title ?? 'United States', subtitle: '', hasRace: sum?.hasRace ?? false, margin: formatMargin(sum?.margin), leansDem: (sum?.margin ?? 0) > 0, demName: sum?.demName ?? 'Democrats', repName: sum?.repName ?? 'Republicans', dem: sum?.dem ?? 0, rep: sum?.rep ?? 0, total: sum?.total ?? 0, footer }
+  if (await saveShareCard(card, shareText(), shareUrl()) === 'saved') {
+    saved.set(true)
+    setTimeout(() => saved.set(false), 2000)
+  }
+}
+
+function toggleTotals(): void {
+  totalsOpen.set(!totalsOpen())
+}
+
 function chooseOffice(next: OfficeKey): void {
   office.set(next)
   handle?.setOffice(next)
@@ -150,6 +215,8 @@ function unpin(): void {
 }
 
 async function mount(): Promise<void> {
+  startErrorReporting()
+  canShare.set(nativeShareAvailable())
   const view = readView()
   office.set(view.office)
   metric.set(view.metric)
@@ -177,8 +244,12 @@ async function mount(): Promise<void> {
   catch (error) {
     // Whatever went wrong, say so: the alternative is a loader that never ends.
     console.error('[votescape] the map could not be drawn:', error)
+    reportError(error, { where: 'map mount', office: view.office, metric: view.metric })
     handle = null
   }
+  // Drawn nothing without throwing: the shapes or the library did not arrive.
+  if (!handle && !failed())
+    reportError(new Error('The map did not mount'), { where: 'map mount', office: view.office })
   failed.set(!handle)
   totals.set(handle?.summary() ?? null)
   loaded.set(true)
@@ -195,10 +266,10 @@ onDestroy(() => {
 })
 </script>
 
-<div class="vs-stage">
+<div class="vs-stage" :class="selected() ? 'has-pin' : ''">
   <h1 class="sr-only">{{ heading }}</h1>
 
-  <div id="election-map" data-stx-ignore data-focus="{{ focus }}" data-counties="{{ files.counties }}" data-states="{{ files.states }}" data-results="{{ files.results }}" class="vs-map" role="application" aria-label="3D map of results by county. Drag to move, scroll to zoom."></div>
+  <div id="election-map" data-stx-ignore data-focus="{{ focus }}" data-counties="{{ files.counties }}" data-states="{{ files.states }}" data-results="{{ files.results }}" class="vs-map" role="application" aria-label="3D map of results by county. Drag to move, scroll or pinch to zoom, tap or click a county for its result."></div>
 
   {{-- Over the map until it is drawn. --}}
   <div class="vs-veil" :class="loaded() ? 'is-done' : ''" aria-hidden="true">
@@ -244,7 +315,11 @@ onDestroy(() => {
         <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </button>
       <button type="button" class="vs-btn vs-btn-quiet" popovertarget="vs-table">Table</button>
-      <a class="vs-btn vs-btn-quiet" href="/about">About</a>
+      <button type="button" class="vs-btn vs-btn-quiet vs-btn-share" popovertarget="vs-share" aria-label="Share">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true"><path d="M8 10V2.5M5 5l3-3 3 3M3.5 8.5v4a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        <span>Share</span>
+      </button>
+      <a class="vs-btn vs-btn-about vs-btn-quiet" href="/about">About</a>
     </div>
   </header>
 
@@ -263,7 +338,48 @@ onDestroy(() => {
         <li><a href="/state/{{ link.code }}" class="{{ link.code === focus ? 'is-here' : '' }}">{{ link.name }}</a></li>
       @endforeach
     </ul>
+    <p class="vs-states-foot"><a href="/about">About the map</a></p>
   </nav>
+
+  {{-- A link to this view, and the places it can be posted. --}}
+  <section id="vs-share" popover class="vs-share-menu" aria-label="Share">
+    <div class="vs-table-head">
+      <p class="vs-states-title">Share this view</p>
+      <button type="button" class="vs-close" popovertarget="vs-share" popovertargetaction="hide" aria-label="Close">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+      </button>
+    </div>
+    <blockquote class="vs-share-text">
+      <p>{{ shareText() }}</p>
+      <p class="vs-share-url">{{ shareUrl() }}</p>
+    </blockquote>
+    <div class="vs-share-main">
+      <button type="button" class="vs-share-primary" :if="canShare()" @click="shareSheet()">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true"><path d="M8 10V2.5M5 5l3-3 3 3M3.5 8.5v4a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        <span>Share</span>
+      </button>
+      <button type="button" :class="copied() ? 'is-done' : ''" @click="copyLink()">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true"><path d="M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-.7.7M9.2 6.8a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l.7-.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+        <span aria-live="polite">{{ copyLabel() }}</span>
+      </button>
+      <button type="button" :class="saved() ? 'is-done' : ''" @click="saveImage()">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5" /><path d="m3 11 3-3 2.5 2.5L10.5 8.5 13 11" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /><circle cx="6" cy="6" r="1" fill="currentColor" /></svg>
+        <span aria-live="polite">{{ saveLabel() }}</span>
+      </button>
+    </div>
+    <p class="vs-share-on vs-states-title">Post it on</p>
+    <ul class="vs-share-sites">
+      <li><a :href="shareX()" target="_blank" rel="noopener noreferrer">X</a></li>
+      <li><a :href="shareBluesky()" target="_blank" rel="noopener noreferrer">Bluesky</a></li>
+      <li><a :href="shareThreads()" target="_blank" rel="noopener noreferrer">Threads</a></li>
+      <li><a :href="shareFacebook()" target="_blank" rel="noopener noreferrer">Facebook</a></li>
+      <li><a :href="shareLinkedin()" target="_blank" rel="noopener noreferrer">LinkedIn</a></li>
+      <li><a :href="shareReddit()" target="_blank" rel="noopener noreferrer">Reddit</a></li>
+      <li><a :href="shareWhatsapp()" target="_blank" rel="noopener noreferrer">WhatsApp</a></li>
+      <li><a :href="shareTelegram()" target="_blank" rel="noopener noreferrer">Telegram</a></li>
+      <li><a :href="shareEmail()">Email</a></li>
+    </ul>
+  </section>
 
   {{-- The same numbers as rows, for reading and for a screen reader. --}}
   <section id="vs-table" popover class="vs-table" aria-label="Results as a table">
@@ -284,13 +400,18 @@ onDestroy(() => {
   </noscript>
 
   {{-- The totals for what is shown. --}}
-  <section class="vs-panel vs-totals" :if="loaded() && hasResults()" aria-live="polite">
+  <section class="vs-panel vs-totals" :class="totalsOpen() ? 'is-open' : ''" :if="loaded() && hasResults()" aria-live="polite">
     <div class="vs-panel-head">
       <div>
         <p class="vs-eyebrow">{{ totalsOffice() }}</p>
         <h2>{{ totalsTitle() }}</h2>
       </div>
-      <p class="vs-margin" :class="totalsLeansDem() ? 'is-dem' : 'is-rep'" :if="totalsHasRace() && totalsMargin()">{{ totalsMargin() }}</p>
+      <div class="vs-panel-row vs-panel-side">
+        <p class="vs-margin" :class="totalsLeansDem() ? 'is-dem' : 'is-rep'" :if="totalsHasRace() && totalsMargin()">{{ totalsMargin() }}</p>
+        <button type="button" class="vs-close vs-fold" :aria-expanded="totalsOpen() ? 'true' : 'false'" aria-label="More of the totals" :if="totalsHasRace()" @click="toggleTotals()">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+      </div>
     </div>
 
     <div :if="totalsHasRace()">
@@ -395,7 +516,7 @@ onDestroy(() => {
 
   <p class="vs-hint" :class="explored() ? 'is-gone' : ''" :if="loaded() && !failed() && !county()" aria-hidden="true">
     <span class="vs-hint-mouse">Drag to move. Scroll to zoom. Right-drag to orbit.</span>
-    <span class="vs-hint-touch">Pinch to zoom. Two fingers to turn and tilt.</span>
+    <span class="vs-hint-touch">Tap a county. Pinch to zoom, twist to turn.</span>
   </p>
 
   {{-- What the colours and heights mean, and where the numbers are from. --}}
@@ -444,6 +565,11 @@ onDestroy(() => {
   --vs-dem: #5b9dff;
   --vs-rep: #ff6f66;
   --vs-gap: 16px;
+  /* The gap from each edge, clear of a phone's notch and home bar. */
+  --vs-t: env(safe-area-inset-top, 0px);
+  --vs-l: calc(var(--vs-gap) + env(safe-area-inset-left, 0px));
+  --vs-r: calc(var(--vs-gap) + env(safe-area-inset-right, 0px));
+  --vs-b: calc(var(--vs-gap) + env(safe-area-inset-bottom, 0px));
 
   position: relative;
   overflow: hidden;
@@ -456,6 +582,8 @@ onDestroy(() => {
   font-size: 14px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
 }
 
 .vs-stage *,
@@ -550,7 +678,7 @@ onDestroy(() => {
   gap: 12px;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding: 14px var(--vs-gap) 28px;
+  padding: calc(14px + var(--vs-t)) var(--vs-r) 28px var(--vs-l);
   pointer-events: none;
   background: linear-gradient(180deg, rgba(11, 15, 23, 0.92) 0%, rgba(11, 15, 23, 0.6) 55%, rgba(11, 15, 23, 0) 100%);
 }
@@ -683,7 +811,7 @@ onDestroy(() => {
 
 .vs-states {
   position: fixed;
-  inset: 62px var(--vs-gap) auto auto;
+  inset: calc(62px + var(--vs-t)) var(--vs-r) auto auto;
   width: min(520px, calc(100vw - 2 * var(--vs-gap)));
   max-height: min(82vh, 680px);
   margin: 0;
@@ -772,11 +900,123 @@ label.vs-states-title {
   display: block;
 }
 
+/* --- Sharing --- */
+
+.vs-states-foot {
+  display: none;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--vs-line);
+}
+
+.vs-share-menu {
+  position: fixed;
+  inset: calc(62px + var(--vs-t)) var(--vs-r) auto auto;
+  width: min(400px, calc(100vw - 2 * var(--vs-gap)));
+  max-height: min(82vh, 680px);
+  margin: 0;
+  padding: 16px;
+  overflow-y: auto;
+  color: var(--vs-text);
+  background: rgba(14, 19, 30, 0.97);
+  border: 1px solid var(--vs-line-strong);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.vs-share-menu::backdrop {
+  background: rgba(5, 8, 13, 0.35);
+}
+
+.vs-stage .vs-share-text {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  color: #d5dbe6;
+  font-size: 14px;
+  line-height: 1.5;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid var(--vs-line);
+  border-radius: 12px;
+}
+
+.vs-stage .vs-share-url {
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--vs-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vs-share-main {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+}
+
+.vs-share-main button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 10px;
+  font-weight: 550;
+  font-size: 13px;
+  white-space: nowrap;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid var(--vs-line);
+  border-radius: 10px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.vs-share-main button:hover {
+  border-color: var(--vs-line-strong);
+}
+
+.vs-share-main button.vs-share-primary {
+  color: #0b0f17;
+  background: #f1f4f9;
+  border-color: #f1f4f9;
+}
+
+.vs-share-main button.is-done {
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.45);
+}
+
+.vs-stage .vs-share-on {
+  margin-top: 16px;
+}
+
+.vs-share-sites {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.vs-share-sites a {
+  display: block;
+  padding: 9px 8px;
+  color: #d5dbe6;
+  font-size: 13.5px;
+  text-align: center;
+  text-decoration: none;
+  border: 1px solid var(--vs-line);
+  border-radius: 9px;
+}
+
+.vs-share-sites a:hover {
+  color: #fff;
+  background: rgba(148, 163, 184, 0.14);
+  border-color: var(--vs-line-strong);
+}
+
 /* --- The table of results --- */
 
 .vs-table {
   position: fixed;
-  inset: 62px var(--vs-gap) auto auto;
+  inset: calc(62px + var(--vs-t)) var(--vs-r) auto auto;
   width: min(560px, calc(100vw - 2 * var(--vs-gap)));
   max-height: min(82vh, 720px);
   margin: 0;
@@ -835,6 +1075,10 @@ label.vs-states-title {
 .vs-table-body .is-num {
   text-align: right;
   white-space: nowrap;
+}
+
+.vs-table-body .vs-brief {
+  display: none;
 }
 
 .vs-table-body .is-dem {
@@ -904,18 +1148,36 @@ label.vs-states-title {
 }
 
 .vs-totals {
-  top: 76px;
-  left: var(--vs-gap);
+  top: calc(76px + var(--vs-t));
+  left: var(--vs-l);
 }
 
 .vs-county {
-  bottom: var(--vs-gap);
-  left: var(--vs-gap);
+  bottom: var(--vs-b);
+  left: var(--vs-l);
 }
 
 .vs-key {
-  right: var(--vs-gap);
-  bottom: var(--vs-gap);
+  right: var(--vs-r);
+  bottom: var(--vs-b);
+}
+
+.vs-panel-side.vs-panel-row {
+  flex-direction: row;
+  align-items: center;
+}
+
+/* Opens the rest of the totals, where the screen is too small to keep them open. */
+.vs-close.vs-fold {
+  display: none;
+}
+
+.vs-fold svg {
+  transition: transform 0.2s ease;
+}
+
+.vs-totals.is-open .vs-fold svg {
+  transform: rotate(180deg);
 }
 
 .vs-panel-head {
@@ -1246,7 +1508,7 @@ label.vs-states-title {
   display: flex;
   position: absolute;
   top: 50%;
-  right: var(--vs-gap);
+  right: var(--vs-r);
   z-index: 1000;
   flex-direction: column;
   overflow: hidden;
@@ -1281,7 +1543,7 @@ label.vs-states-title {
 
 .vs-hint {
   position: absolute;
-  bottom: 22px;
+  bottom: calc(6px + var(--vs-b));
   left: 50%;
   z-index: 1000;
   padding: 6px 14px;
@@ -1326,7 +1588,7 @@ label.vs-states-title {
 
 /* --- Narrower: the office switcher takes its own row --- */
 
-@media (max-width: 960px) {
+@media (max-width: 1040px) {
   .vs-top {
     grid-template-columns: 1fr auto;
     row-gap: 10px;
@@ -1344,7 +1606,7 @@ label.vs-states-title {
   }
 
   .vs-totals {
-    top: 122px;
+    top: calc(122px + var(--vs-t));
   }
 }
 
@@ -1356,8 +1618,13 @@ label.vs-states-title {
   }
 
   .vs-top {
-    padding-top: 10px;
+    padding-top: calc(10px + var(--vs-t));
     padding-bottom: 18px;
+  }
+
+  .vs-btn-about,
+  .vs-btn-share span {
+    display: none;
   }
 
   .vs-tag,
@@ -1381,8 +1648,16 @@ label.vs-states-title {
   }
 
   .vs-totals {
-    top: 110px;
-    right: var(--vs-gap);
+    top: calc(106px + var(--vs-t));
+    right: var(--vs-r);
+  }
+
+  .vs-close.vs-fold {
+    display: inline-flex;
+  }
+
+  .vs-totals:not(.is-open) .vs-seats {
+    display: none;
   }
 
   .vs-panel h2 {
@@ -1423,11 +1698,24 @@ label.vs-states-title {
     display: none;
   }
 
+  .vs-totals.is-open .vs-more {
+    display: block;
+  }
+
   .vs-key {
-    right: var(--vs-gap);
-    bottom: var(--vs-gap);
-    left: var(--vs-gap);
+    right: var(--vs-r);
+    bottom: var(--vs-b);
+    left: var(--vs-l);
     padding: 10px 14px 12px;
+  }
+
+  /* A pinned county takes the legend's place, and gives it back when closed. */
+  .has-pin .vs-key {
+    display: none;
+  }
+
+  .has-pin .vs-county {
+    bottom: var(--vs-b);
   }
 
   .vs-key > .vs-key-row:first-child {
@@ -1448,8 +1736,8 @@ label.vs-states-title {
   }
 
   .vs-county {
-    right: var(--vs-gap);
-    bottom: 138px;
+    right: var(--vs-r);
+    bottom: calc(126px + var(--vs-b));
   }
 
   .vs-county .vs-count {
@@ -1463,14 +1751,16 @@ label.vs-states-title {
   }
 
   .vs-hint {
-    bottom: 146px;
+    bottom: calc(134px + var(--vs-b));
     font-size: 12px;
   }
 
   .vs-states,
-  .vs-table {
-    inset: 56px var(--vs-gap) auto var(--vs-gap);
+  .vs-table,
+  .vs-share-menu {
+    inset: calc(56px + var(--vs-t)) var(--vs-r) auto var(--vs-l);
     width: auto;
+    max-height: calc(100dvh - 72px - var(--vs-t) - var(--vs-b));
   }
 
   .vs-btn {
@@ -1486,9 +1776,236 @@ label.vs-states-title {
   }
 }
 
+/* --- Under a finger: everything to press is at least 40px tall --- */
+
+@media (pointer: coarse) {
+  .vs-seg button,
+  .vs-btn {
+    min-height: 40px;
+  }
+
+  .vs-btn-share {
+    min-width: 40px;
+    justify-content: center;
+  }
+
+  .vs-seg-small button,
+  .vs-reset {
+    min-height: 34px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .vs-close {
+    width: 32px;
+    height: 32px;
+  }
+
+  .vs-states a {
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
+
+  .vs-table-body th,
+  .vs-table-body td {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+}
+
+@media (max-width: 720px) {
+  .vs-states-foot {
+    display: block;
+  }
+
+  .vs-states-foot a {
+    display: inline-block;
+  }
+
+  .vs-table-body th,
+  .vs-table-body td {
+    padding-right: 5px;
+    padding-left: 5px;
+  }
+
+  .vs-table-body table {
+    font-size: 13px;
+  }
+
+  .vs-table-body .vs-full {
+    display: none;
+  }
+
+  .vs-table-body .vs-brief {
+    display: inline;
+  }
+}
+
+/* --- A phone on its side: one row across the top, small panels in the corners --- */
+
+@media (max-height: 520px) {
+  .vs-top {
+    grid-template-columns: auto 1fr auto;
+    row-gap: 0;
+    padding-top: calc(8px + var(--vs-t));
+    padding-bottom: 12px;
+  }
+
+  .vs-offices {
+    display: inline-flex;
+    grid-row: auto;
+    grid-column: auto;
+    justify-self: center;
+  }
+
+  .vs-offices button {
+    padding: 6px 9px;
+    font-size: 12.5px;
+  }
+
+  .vs-tag,
+  .vs-brand span,
+  .vs-crumb span,
+  .vs-btn-about,
+  .vs-btn-share span {
+    display: none;
+  }
+
+  .vs-top-end {
+    gap: 2px;
+  }
+
+  .vs-btn {
+    padding: 6px 9px;
+  }
+
+  .vs-states-foot {
+    display: block;
+  }
+
+  .vs-panel {
+    width: 248px;
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+
+  .vs-panel h2 {
+    font-size: 15px;
+  }
+
+  .vs-margin {
+    font-size: 20px;
+  }
+
+  .vs-share {
+    margin-top: 8px;
+  }
+
+  .vs-sides {
+    grid-template-columns: 1fr;
+    gap: 3px;
+    margin-top: 8px;
+  }
+
+  .vs-count {
+    display: inline;
+    min-width: 0;
+  }
+
+  .vs-totals {
+    top: calc(56px + var(--vs-t));
+    right: auto;
+  }
+
+  .vs-close.vs-fold {
+    display: inline-flex;
+  }
+
+  .vs-totals:not(.is-open) .vs-seats,
+  .vs-totals:not(.is-open) .vs-sides,
+  .vs-more {
+    display: none;
+  }
+
+  .vs-totals.is-open .vs-more {
+    display: block;
+  }
+
+  .vs-totals.is-open {
+    max-height: calc(100dvh - 68px - var(--vs-t) - var(--vs-b));
+    overflow-y: auto;
+  }
+
+  .vs-key,
+  .has-pin .vs-key {
+    display: block;
+    left: auto;
+    padding: 10px 12px;
+  }
+
+  .vs-key > .vs-key-row:first-child {
+    display: none;
+  }
+
+  .vs-scale {
+    margin-top: 0;
+  }
+
+  .vs-key-height {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+
+  .vs-source {
+    display: none;
+  }
+
+  .vs-county,
+  .has-pin .vs-county {
+    right: auto;
+    bottom: var(--vs-b);
+  }
+
+  /* The totals fold away while a county is open under them. */
+  .has-pin .vs-totals.is-open {
+    max-height: calc(100dvh - 250px);
+  }
+
+  .vs-controls {
+    top: calc(56px + var(--vs-t));
+    flex-direction: row;
+    transform: none;
+  }
+
+  .vs-controls button {
+    border-top: 0;
+    border-left: 1px solid var(--vs-line);
+  }
+
+  .vs-controls button:first-child {
+    border-left: 0;
+  }
+
+  .vs-hint {
+    display: none;
+  }
+
+  .vs-states,
+  .vs-table,
+  .vs-share-menu {
+    inset: calc(52px + var(--vs-t)) var(--vs-r) auto auto;
+    width: min(520px, calc(100vw - var(--vs-l) - var(--vs-r)));
+    max-height: calc(100dvh - 60px - var(--vs-t));
+  }
+
+  .vs-states ul {
+    columns: 3;
+  }
+}
+
 /* --- A short window: the legend gives up its small print to the map --- */
 
-@media (max-height: 760px) and (min-width: 721px) {
+@media (max-height: 760px) and (min-height: 521px) and (min-width: 721px) {
   .vs-key .vs-more {
     display: none;
   }

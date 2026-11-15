@@ -218,8 +218,11 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
   let office = options.office
   let metric = options.metric
 
+  /** A phone on its side, or a window as short: the panels are small and sit in the corners. */
+  const short = (): boolean => el.clientHeight < 520
+
   /** A phone held upright: the panels stack above and below the map, not beside it. */
-  const narrow = (): boolean => el.clientWidth < 720
+  const narrow = (): boolean => el.clientWidth < 720 && !short()
 
   const home = (): { center: [number, number], zoom: number } => {
     const bounds = focus ? focus.properties.b : unionBounds(states)
@@ -227,7 +230,13 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
       // Fitted across nearly the whole width, and looked at a little north of
       // its middle, which sets it lower on screen: clear of the totals above.
       const view = viewFor(bounds, el.clientWidth, el.clientHeight, PITCH, focus ? 0.8 : 0.96, 0.34)
-      return { center: [view.center[0] + (bounds[3] - bounds[1]) * (focus ? 0.2 : 0.48), view.center[1]], zoom: view.zoom }
+      return { center: [view.center[0] + (bounds[3] - bounds[1]) * (focus ? 0.14 : 0.38), view.center[1]], zoom: view.zoom }
+    }
+    if (short()) {
+      // Little height to give: fitted to it, and set to the right of the
+      // totals, which take the top left corner.
+      const view = viewFor(bounds, el.clientWidth, el.clientHeight, PITCH, 0.5, focus ? 0.5 : 0.62)
+      return { center: [view.center[0] + (bounds[3] - bounds[1]) * 0.2, view.center[1] - (bounds[2] - bounds[0]) * 0.06], zoom: view.zoom }
     }
     // A state alone is given more room above it: its towers are taller on
     // screen than the country's.
@@ -264,7 +273,7 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
   /** Metres to a unit of the metric, for the tallest prism to stand a share of the view's height. */
   const scale = (): number => {
     const largest = scope().reduce((max, c) => Math.max(max, heightValue(c, office, metric)), 0)
-    return metresPerUnit(largest, home().zoom, el.clientHeight * (narrow() ? 0.22 : focus ? 0.34 : 0.27))
+    return metresPerUnit(largest, home().zoom, el.clientHeight * (narrow() ? 0.25 : focus ? 0.34 : 0.27))
   }
 
   // --- Roof labels ---
@@ -280,7 +289,7 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
     // The largest first, each one kept if its label would not sit on one
     // already kept. Measured on screen, where the labels are: two towers a
     // long way apart on the ground can stand one behind the other.
-    const wanted = narrow() ? 5 : focus ? 7 : 14
+    const wanted = narrow() || short() ? 5 : focus ? 7 : 14
     const chosen: CountyFeature[] = []
     const placed: Array<{ x: number, y: number }> = []
     const ranked = [...scope()].sort((a, b) => metricValue(b, office, metric) - metricValue(a, office, metric)).slice(0, wanted * 4)
@@ -446,6 +455,10 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
   }
 
   map.on('pointermove', (e: any) => {
+    // A finger on the glass is moving the map, not pointing at a county: a
+    // tap is what chooses one there, and it arrives as a click.
+    if (e.originalEvent?.pointerType === 'touch')
+      return
     const id = countyAt(e.containerPoint)
     el.style.cursor = id ? 'pointer' : ''
     if (id === hovered)
@@ -611,6 +624,8 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
       const side = !text || text === 'Even' ? '' : (margin ?? 0) > 0 ? ' is-dem' : ' is-rep'
       return `<td class="is-num${side}">${text || 'n/a'}</td>`
     }
+    // The count in full, and in short for a screen too narrow for it.
+    const votesCell = (votes: number): string => `<td class="is-num"><span class="vs-full">${Math.round(votes).toLocaleString('en-US')}</span><span class="vs-brief">${formatVotes(votes)}</span></td>`
     const share = (side: number, other: number): string => (side + other > 0 ? `${((side / (side + other)) * 100).toFixed(1)}%` : '')
     const rows: string[] = []
     if (focus) {
@@ -619,7 +634,7 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
         .filter((entry): entry is { county: CountyFeature, row: NonNullable<typeof entry.row> } => !!entry.row)
         .sort((a, b) => b.row[2] - a.row[2])
       for (const { county, row } of list) {
-        rows.push(`<tr><th scope="row"><button type="button" data-county="${escapeHtml(county.id)}">${escapeHtml(county.properties.l)}</button></th>${marginCell(row[5])}${cell(share(row[0], row[1]), true)}${cell(share(row[1], row[0]), true)}${cell(Math.round(row[2]).toLocaleString('en-US'), true)}</tr>`)
+        rows.push(`<tr><th scope="row"><button type="button" data-county="${escapeHtml(county.id)}">${escapeHtml(county.properties.l)}</button></th>${marginCell(row[5])}${cell(share(row[0], row[1]), true)}${cell(share(row[1], row[0]), true)}${votesCell(row[2])}</tr>`)
       }
     }
     else {
@@ -628,7 +643,7 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
         .filter((entry): entry is { state: StateFeature, row: StateSummary } => !!entry.row)
         .sort((a, b) => b.row.total - a.row.total)
       for (const { state, row } of list) {
-        rows.push(`<tr><th scope="row"><a href="/state/${state.properties.usps.toLowerCase()}${location.search}">${escapeHtml(state.properties.n)}</a></th>${marginCell(row.margin)}${cell(share(row.dem, row.rep), true)}${cell(share(row.rep, row.dem), true)}${cell(Math.round(row.total).toLocaleString('en-US'), true)}</tr>`)
+        rows.push(`<tr><th scope="row"><a href="/state/${state.properties.usps.toLowerCase()}${location.search}">${escapeHtml(state.properties.n)}</a></th>${marginCell(row.margin)}${cell(share(row.dem, row.rep), true)}${cell(share(row.rep, row.dem), true)}${votesCell(row.total)}</tr>`)
       }
     }
     const what = focus ? 'County' : 'State'
@@ -657,6 +672,31 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
   }
   tablePopover?.addEventListener('toggle', onTableToggle)
   table?.addEventListener('click', onTableClick)
+
+  // Escape lets go of the pinned county, unless it is closing a popover.
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && selected !== undefined && !document.querySelector(':popover-open'))
+      pin(undefined)
+  }
+  document.addEventListener('keydown', onKey)
+
+  // A phone turned on its side, or a window resized: until the reader has
+  // moved the map themselves, it is fitted again to the room it now has.
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null
+  const onResize = (): void => {
+    if (resizeTimer)
+      clearTimeout(resizeTimer)
+    resizeTimer = setTimeout(() => {
+      resizeTimer = null
+      map.invalidateSize?.()
+      if (!hasExplored) {
+        const view = home()
+        map.setView(view.center, view.zoom, { animate: false })
+      }
+      paint()
+    }, 200)
+  }
+  window.addEventListener('resize', onResize)
 
   options.onReady({ meta: results?.meta ?? null, webgl: webglAvailable() })
 
@@ -699,6 +739,10 @@ export async function mountElectionMap(containerId: string, options: ElectionMap
     destroy() {
       if (relabelTimer)
         clearTimeout(relabelTimer)
+      if (resizeTimer)
+        clearTimeout(resizeTimer)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', onResize)
       search?.removeEventListener('input', onSearchInput)
       search?.removeEventListener('change', onSearchChange)
       search?.removeEventListener('keydown', onSearchKey)
