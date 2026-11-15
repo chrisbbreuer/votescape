@@ -55,8 +55,38 @@ export const tsCloud: TsCloudConfig = {
 
   infrastructure: {
     dns: {
-      provider: 'porkbun',
+      /*
+       * The zone is served by Cloudflare; the domain stays registered at
+       * Porkbun. The site runs on one box, so every page and every map file
+       * was a round trip to it from wherever the reader is. Behind Cloudflare,
+       * TLS ends at the nearest edge and the county shapes, scripts and pages
+       * are answered from the edge cache.
+       *
+       * `registrar` makes the move part of the deploy: ts-cloud creates the
+       * zone, copies Porkbun's records across, checks them record for record,
+       * and only then repoints the nameservers. It needs CLOUDFLARE_API_TOKEN,
+       * CLOUDFLARE_ACCOUNT_ID, PORKBUN_API_KEY and PORKBUN_SECRET_KEY in the
+       * deploy's environment.
+       */
+      provider: 'cloudflare',
       domain: APP_DOMAIN,
+
+      registrar: {
+        provider: 'porkbun',
+        // Only the web hosts go through the proxy. A mail host must never.
+        proxied: [APP_DOMAIN, `www.${APP_DOMAIN}`],
+        // The first deploy reports what it would copy and changes nothing.
+        // Read that report, then delete this line to make the move.
+        dryRun: true,
+      },
+
+      // `strict` because the box holds a real certificate. A new Cloudflare
+      // zone starts on `full`, and `flexible` loops against HTTPS redirects.
+      zone: {
+        ssl: 'strict',
+        alwaysUseHttps: true,
+        minTlsVersion: '1.2',
+      },
     },
     compute: {
       instances: 1,
@@ -70,6 +100,33 @@ export const tsCloud: TsCloudConfig = {
       proxy: {
         engine: 'rpx',
         onDemandTls: true,
+
+        /*
+         * Cloudflare's edge in front of the box, with cache rules that fit
+         * what the site serves (config/server.ts names the same paths):
+         *
+         * - Scripts, styles and the county shapes carry a version in their
+         *   address, so the edge and the browser keep them for good. `json`
+         *   is in the list for `/data/geo/*`.
+         * - `/data/results/*` is rewritten while a count is running and asked
+         *   for without a version, so it is never held at the edge: the box's
+         *   own five-minute header is what a browser gets.
+         * - Pages, images and cards are held at the edge for five minutes and
+         *   checked again by the browser each visit. A page states the
+         *   current count, so it may be no staler than the results file.
+         *
+         * The edge is emptied at the end of every deploy.
+         */
+        cdn: {
+          provider: 'cloudflare',
+          cloudflare: {
+            cache: {
+              assetExtensions: ['js', 'mjs', 'css', 'map', 'json', 'woff', 'woff2', 'wasm'],
+              bypassPaths: ['/data/results', '/api'],
+              documentEdgeTtl: 300,
+            },
+          },
+        },
       },
     },
   },
