@@ -146,6 +146,7 @@ const race = derived(() => {
   return sum?.hasRace && key ? raceInfo(election(), key, sum.title === 'United States' ? '' : sum.title) : null
 })
 const raceText = derived(() => race()?.text ?? '')
+const raceIsHouse = derived(() => officeFromLabel(totals()?.office ?? '') === 'house')
 const raceDate = derived(() => (race() ? `Election day: ${race()?.date}` : ''))
 const raceLabel = derived(() => race()?.links[0]?.label ?? '')
 const raceHref = derived(() => race()?.links[0]?.href ?? '')
@@ -422,7 +423,7 @@ onDestroy(() => {
         <li><a href="/state/{{ link.code }}" class="{{ link.code === focus ? 'is-here' : '' }}">{{ link.name }}</a></li>
       @endforeach
     </ul>
-    <p class="vs-states-foot"><a href="/about">About the map</a></p>
+    <p class="vs-states-foot"><a href="/about">About the map</a><a href="/representation">How many people a seat stands for</a></p>
   </nav>
 
   {{-- A link to this view, and the places it can be posted. --}}
@@ -540,6 +541,7 @@ onDestroy(() => {
       <p class="vs-race-links">
         <a :href="raceHref()" :title="raceTitle()" target="_blank" rel="noopener noreferrer">{{ raceLabel() }}<svg viewBox="0 0 16 16" width="11" height="11" fill="none" aria-hidden="true"><path d="M6 3.5H3.5v9h9V10M9 3.5h3.5V7M12.5 3.5 7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></a>
         <a :if="raceHref2()" :href="raceHref2()" :title="raceTitle2()" target="_blank" rel="noopener noreferrer">{{ raceLabel2() }}<svg viewBox="0 0 16 16" width="11" height="11" fill="none" aria-hidden="true"><path d="M6 3.5H3.5v9h9V10M9 3.5h3.5V7M12.5 3.5 7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></a>
+        <a :if="raceIsHouse()" href="/representation">People per seat</a>
       </p>
       <p class="vs-phone-only vs-small">{{ sourceLine() }}<span :if="sourceLine() && sourceCredit()">. </span>{{ sourceCredit() }}</p>
     </div>
@@ -1025,7 +1027,9 @@ label.vs-states-title {
 /* --- Sharing --- */
 
 .vs-states-foot {
-  display: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid var(--vs-line);
@@ -2260,10 +2264,6 @@ label.vs-states-title {
 }
 
 @media (max-width: 720px) {
-  .vs-states-foot {
-    display: block;
-  }
-
   .vs-states-foot a {
     display: inline-block;
   }
@@ -2331,10 +2331,6 @@ label.vs-states-title {
 
   .vs-btn {
     padding: 6px 9px;
-  }
-
-  .vs-states-foot {
-    display: block;
   }
 
   .vs-panel {

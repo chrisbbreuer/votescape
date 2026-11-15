@@ -56,6 +56,7 @@ async function file(path: string, type: string, minBytes: number): Promise<Respo
 
 await page('/', ['id="election-map"', 'Votescape', 'og:image'])
 await page('/about', ['Land does not vote'])
+await page('/representation', ['761,169', '210,328', 'Delaware'])
 await page('/state/tx', ['id="election-map"', 'data-focus="tx"', 'Texas'])
 await page('/state/ak?office=senate', ['data-focus="ak"'])
 

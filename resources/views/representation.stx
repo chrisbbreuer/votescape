@@ -1,0 +1,614 @@
+@extends('default')
+@section('content')
+<script server>
+/**
+ * How many people one member of the House speaks for, and how that came to
+ * be: the House stopped growing in 1911 and the country did not.
+ *
+ * Every figure is the Census Bureau's, from resources/data/apportionment.ts,
+ * which scripts/build-apportionment.ts writes. The page is prose, a chart and
+ * a table, all drawn here on the server.
+ */
+import { CENSUSES, FIRST_CENSUS, LAST_CENSUS, STATE_SEATS } from '~/resources/data/apportionment'
+
+const pageTitle = 'One seat, 761,169 people: how the House stopped growing'
+const pageDescription = 'In 1910 a member of the House spoke for about 210,000 people. Today it is 761,000, and nearly a million in Delaware. The history of the 435 seats, census by census and state by state.'
+const canonicalPath = '/representation'
+
+const fmt = (n) => Math.round(n).toLocaleString('en-US')
+const times = (n) => `${n.toFixed(1)} times`
+
+const then = CENSUSES[0]
+const now = CENSUSES[CENSUSES.length - 1]
+const firstYear = FIRST_CENSUS
+const lastYear = LAST_CENSUS
+const thenPer = fmt(then.perSeat)
+const nowPer = fmt(now.perSeat)
+const growth = times(now.perSeat / then.perSeat)
+const thenSeats = then.seats
+const nowSeats = now.seats
+const in1920 = fmt(CENSUSES.find(c => c.year === 1920).perSeat)
+
+// Each census as a bar, as long as its people to a seat.
+const longest = now.perSeat
+export const bars = CENSUSES.map(c => ({
+  year: c.year,
+  per: fmt(c.perSeat),
+  population: `${(c.population / 1e6).toFixed(1)} million`,
+  seats: c.seats,
+  width: `width:${((c.perSeat / longest) * 100).toFixed(1)}%`,
+}))
+
+// The states, most people to a seat first.
+const ranked = [...STATE_SEATS].sort((a, b) => b.perSeat - a.perSeat)
+const most = ranked[0]
+const least = ranked[ranked.length - 1]
+const mostName = most.name
+const leastName = least.name
+const mostPer = fmt(most.perSeat)
+const leastPer = fmt(least.perSeat)
+const spread = (most.perSeat / least.perSeat).toFixed(2)
+const widest = most.perSeat
+
+const row = (s) => {
+  const against = (s.perSeat / now.perSeat - 1) * 100
+  return {
+    code: s.code,
+    name: s.name,
+    seats: s.seats,
+    per: fmt(s.perSeat),
+    width: `width:${((s.perSeat / widest) * 100).toFixed(1)}%`,
+    // A state within half a point of the average is at it.
+    against: Math.abs(against) < 0.5 ? 'Average' : `${against > 0 ? '+' : '-'}${Math.abs(against).toFixed(0)}%`,
+    tone: Math.abs(against) < 0.5 ? '' : against > 0 ? 'is-over' : 'is-under',
+    seatsThen: s.seatsThen ? String(s.seatsThen) : 'Not a state',
+    perThen: s.perSeatThen ? fmt(s.perSeatThen) : '',
+    grew: s.perSeatThen ? `${(s.perSeat / s.perSeatThen).toFixed(1)}x` : '',
+    change: s.seatsThen ? (s.seats - s.seatsThen === 0 ? 'Same' : `${s.seats > s.seatsThen ? '+' : '-'}${Math.abs(s.seats - s.seatsThen)}`) : '',
+  }
+}
+export const byPeople = ranked.map(row)
+export const bySeats = [...STATE_SEATS].sort((a, b) => b.seats - a.seats || a.name.localeCompare(b.name)).map(row)
+export const byName = [...STATE_SEATS].sort((a, b) => a.name.localeCompare(b.name)).map(row)
+
+// What the House would be at other sizes of seat.
+const apportioned = now.perSeat * now.seats
+const atThen = fmt(apportioned / then.perSeat)
+const smallest = [...STATE_SEATS].sort((a, b) => a.perSeat * a.seats - b.perSeat * b.seats)[0]
+const smallestName = smallest.name
+const smallestPeople = fmt(smallest.perSeat * smallest.seats)
+const atSmallest = fmt(apportioned / (smallest.perSeat * smallest.seats))
+
+// The states that lost and gained the most seats since the first census here.
+const moved = STATE_SEATS.filter(s => s.seatsThen)
+const lost = [...moved].sort((a, b) => (a.seats - a.seatsThen) - (b.seats - b.seatsThen)).slice(0, 3)
+const gained = [...moved].sort((a, b) => (b.seats - b.seatsThen) - (a.seats - a.seatsThen)).slice(0, 3)
+const said = (list) => list.map(s => `${s.name} (${s.seatsThen} to ${s.seats})`).join(', ')
+const lostSaid = said(lost)
+const gainedSaid = said(gained)
+</script>
+
+<script client>
+// Which order the table is in. All three are on the page: this shows one.
+const order = state('people')
+function sortBy(next: string): void {
+  order.set(next)
+}
+</script>
+
+<div class="va-page">
+  <header class="va-top">
+    <a class="va-brand" href="/" aria-label="Votescape, back to the map">
+      <svg viewBox="0 0 48 48" width="26" height="26" fill="none" aria-hidden="true">
+        <rect x="6" y="22" width="9" height="20" rx="2" fill="#5b9dff" />
+        <rect x="19.5" y="6" width="9" height="36" rx="2" fill="#e8dce4" />
+        <rect x="33" y="15" width="9" height="27" rx="2" fill="#ff6f66" />
+      </svg>
+      <span>Votescape</span>
+    </a>
+    <a class="va-back" href="/?office=house">Open the House map</a>
+  </header>
+
+  <article class="va-article">
+    <p class="va-eyebrow">Representation</p>
+    <h1>One seat in the House now speaks for {{ nowPer }} people.</h1>
+    <p class="va-lede">After the {{ firstYear }} census it spoke for {{ thenPer }}. The country has more than tripled since. The House has not grown by a single seat.</p>
+
+    <div class="vr-stats">
+      <div>
+        <p class="vr-stat">{{ thenPer }}</p>
+        <p class="vr-stat-label">people to a representative, {{ firstYear }} census, {{ thenSeats }} seats</p>
+      </div>
+      <div>
+        <p class="vr-stat">{{ nowPer }}</p>
+        <p class="vr-stat-label">people to a representative, {{ lastYear }} census, {{ nowSeats }} seats</p>
+      </div>
+      <div>
+        <p class="is-accent vr-stat">{{ growth }}</p>
+        <p class="vr-stat-label">as many people behind every seat as then</p>
+      </div>
+    </div>
+
+    <section>
+      <h2>Why 435</h2>
+      <p>The Constitution sets a floor and no ceiling: every state has at least one representative, and there may be no more than one for every thirty thousand people. For more than a century Congress kept to the spirit of that by adding seats. The House began with 65 members, and after nearly every census it grew, so that a growing country kept roughly the same closeness to the people it sent to Washington.</p>
+      <p>That stopped in 1911. Nothing in the Constitution fixes the number at 435. An ordinary law does, and an ordinary law could change it.</p>
+
+      <ol class="vr-timeline">
+        <li>
+          <b>1789</b>
+          <div>
+            <h3>65 members, and a promise to count</h3>
+            <p>The Constitution names the first House seat by seat and orders a census every ten years to share the seats out again by population.</p>
+          </div>
+        </li>
+        <li>
+          <b>1790 to 1910</b>
+          <div>
+            <h3>The House grows with the country</h3>
+            <p>Congress passes a new apportionment after each census and, with one exception in the 1840s, makes the House larger every time. A state that grew slowly could keep its seats because there were more seats to go around.</p>
+          </div>
+        </li>
+        <li>
+          <b>1911</b>
+          <div>
+            <h3>The last increase</h3>
+            <p>The Apportionment Act of 1911 sets the House at {{ thenSeats }} seats, with one more each for Arizona and New Mexico when they become states the next year. That makes 435, and a seat then stood for about {{ thenPer }} people.</p>
+          </div>
+        </li>
+        <li>
+          <b>1920</b>
+          <div>
+            <h3>The census Congress ignored</h3>
+            <p>The 1920 count found, for the first time, more Americans in towns and cities than in the countryside. Sharing the seats out again would have moved power to the cities, and Congress could not agree to do it. For the only time in its history it passed no reapportionment at all, and the seats of 1911 stood for twenty years while a seat came to mean {{ in1920 }} people.</p>
+          </div>
+        </li>
+        <li>
+          <b>1929</b>
+          <div>
+            <h3>435, for good</h3>
+            <p>The Permanent Apportionment Act ends the argument by taking Congress out of it. The number stays at 435, and after each census the seats are shared out by formula, with no new law needed. From here on a growing population can only make every seat bigger.</p>
+          </div>
+        </li>
+        <li>
+          <b>1941</b>
+          <div>
+            <h3>The formula still used</h3>
+            <p>Congress adopts the method of equal proportions, which hands out seats 51 to 435 one at a time to whichever state has the strongest claim to its next one. It has shared out the House after every census since.</p>
+          </div>
+        </li>
+        <li>
+          <b>1959</b>
+          <div>
+            <h3>437, briefly</h3>
+            <p>Alaska and Hawaii become states and are given a seat each on top of the 435. After the 1960 census the House goes back to 435, and two seats come out of the other states' share.</p>
+          </div>
+        </li>
+        <li>
+          <b>1964</b>
+          <div>
+            <h3>One person, one vote, inside a state</h3>
+            <p>In Wesberry v. Sanders the Supreme Court rules that a state's districts must hold nearly equal numbers of people. That evens out the districts within a state. It does nothing about the differences between states, which come from the 435.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>People to a representative, census by census</h2>
+      <p>The same {{ nowSeats }} seats, shared among more people each decade. The figures are the Census Bureau's.</p>
+      <div class="vr-chart" role="table" aria-label="People to a representative at each census">
+        @foreach(bars as bar)
+          <div class="vr-bar-row" role="row">
+            <span class="vr-bar-year" role="rowheader">{{ bar.year }}</span>
+            <span class="vr-bar-track" role="cell"><i style="{{ bar.width }}"></i></span>
+            <span class="vr-bar-value" role="cell">{{ bar.per }}</span>
+            <span class="vr-bar-note" role="cell">{{ bar.population }}, {{ bar.seats }} seats</span>
+          </div>
+        @endforeach
+      </div>
+    </section>
+
+    <section>
+      <h2>It is not the same everywhere</h2>
+      <p>{{ nowPer }} is an average across the country. No state has exactly that, because seats come whole and every state gets at least one. A small state just short of earning a second seat ends up with one very large district. A state that only just earned its second ends up with two small ones.</p>
+      <p>After the {{ lastYear }} census, {{ mostName }}'s single representative speaks for {{ mostPer }} people. Each of {{ leastName }}'s two speaks for {{ leastPer }}. A vote for the House in {{ leastName }} carries {{ spread }} times the weight of one in {{ mostName }}.</p>
+      <p>The seats have also moved. Since {{ firstYear }} the most were lost by {{ lostSaid }}, and the most gained by {{ gainedSaid }}. With the total fixed, every seat one state gains is a seat another gives up.</p>
+
+      <div class="vr-sort" role="group" aria-label="Order of the table">
+        <span>Sort by</span>
+        <button type="button" :class="order() === 'people' ? 'is-on' : ''" :aria-pressed="order() === 'people' ? 'true' : 'false'" @click="sortBy('people')">People to a seat</button>
+        <button type="button" :class="order() === 'seats' ? 'is-on' : ''" :aria-pressed="order() === 'seats' ? 'true' : 'false'" @click="sortBy('seats')">Seats</button>
+        <button type="button" :class="order() === 'name' ? 'is-on' : ''" :aria-pressed="order() === 'name' ? 'true' : 'false'" @click="sortBy('name')">State</button>
+      </div>
+
+      <div class="vr-table-wrap">
+        <table class="vr-table">
+          <caption class="sr-only">Seats in the House and people to each representative, by state, from the {{ lastYear }} and {{ firstYear }} censuses</caption>
+          <thead>
+            <tr>
+              <th scope="col">State</th>
+              <th scope="col" class="is-num">Seats</th>
+              <th scope="col" class="is-num">People to a seat</th>
+              <th scope="col" class="is-num">Against the average</th>
+              <th scope="col" class="is-num vr-wide">Seats in {{ firstYear }}</th>
+              <th scope="col" class="is-num vr-wide">People to a seat in {{ firstYear }}</th>
+              <th scope="col" class="is-num vr-wide">Growth</th>
+            </tr>
+          </thead>
+          <tbody :show="order() === 'people'">
+            @foreach(byPeople as s)
+              <tr>
+                <th scope="row"><a href="/state/{{ s.code }}?office=house">{{ s.name }}</a></th>
+                <td class="is-num">{{ s.seats }}</td>
+                <td class="is-num vr-per"><span>{{ s.per }}</span><i style="{{ s.width }}"></i></td>
+                <td class="is-num {{ s.tone }}">{{ s.against }}</td>
+                <td class="is-num vr-wide">{{ s.seatsThen }}<small>{{ s.change }}</small></td>
+                <td class="is-num vr-wide">{{ s.perThen }}</td>
+                <td class="is-num vr-wide">{{ s.grew }}</td>
+              </tr>
+            @endforeach
+          </tbody>
+          <tbody :show="order() === 'seats'" style="display:none">
+            @foreach(bySeats as s)
+              <tr>
+                <th scope="row"><a href="/state/{{ s.code }}?office=house">{{ s.name }}</a></th>
+                <td class="is-num">{{ s.seats }}</td>
+                <td class="is-num vr-per"><span>{{ s.per }}</span><i style="{{ s.width }}"></i></td>
+                <td class="is-num {{ s.tone }}">{{ s.against }}</td>
+                <td class="is-num vr-wide">{{ s.seatsThen }}<small>{{ s.change }}</small></td>
+                <td class="is-num vr-wide">{{ s.perThen }}</td>
+                <td class="is-num vr-wide">{{ s.grew }}</td>
+              </tr>
+            @endforeach
+          </tbody>
+          <tbody :show="order() === 'name'" style="display:none">
+            @foreach(byName as s)
+              <tr>
+                <th scope="row"><a href="/state/{{ s.code }}?office=house">{{ s.name }}</a></th>
+                <td class="is-num">{{ s.seats }}</td>
+                <td class="is-num vr-per"><span>{{ s.per }}</span><i style="{{ s.width }}"></i></td>
+                <td class="is-num {{ s.tone }}">{{ s.against }}</td>
+                <td class="is-num vr-wide">{{ s.seatsThen }}<small>{{ s.change }}</small></td>
+                <td class="is-num vr-wide">{{ s.perThen }}</td>
+                <td class="is-num vr-wide">{{ s.grew }}</td>
+              </tr>
+            @endforeach
+          </tbody>
+        </table>
+      </div>
+      <p class="vr-foot">People to a seat is a state's apportionment population over its seats. Against the average compares it with the national {{ nowPer }}: above it, each person there has less of a representative than the average American. The District of Columbia has no voting member and is not in the table. Arizona, New Mexico, Alaska and Hawaii were not states at the {{ firstYear }} census.</p>
+    </section>
+
+    <section>
+      <h2>What a different size would look like</h2>
+      <dl class="va-list">
+        <div>
+          <dt>{{ atThen }} seats</dt>
+          <dd>The House it would take for a member to speak for {{ thenPer }} people again, as in {{ firstYear }}.</dd>
+        </div>
+        <div>
+          <dt>{{ atSmallest }} seats</dt>
+          <dd>The House under what is often called the Wyoming Rule: a seat for every {{ smallestPeople }} people, the population of {{ smallestName }}, the smallest state.</dd>
+        </div>
+        <div>
+          <dt>{{ nowSeats }} seats</dt>
+          <dd>The House as it is, where the next census will again move a handful of seats between states and make every one of them stand for more people.</dd>
+        </div>
+      </dl>
+      <p class="vr-foot">These are arithmetic, not proposals: the population the seats were shared among in {{ lastYear }}, divided by a size of seat.</p>
+    </section>
+
+    <section>
+      <h2>Sources and further reading</h2>
+      <p>The populations, seats and people to a seat are from the U.S. Census Bureau's <a href="https://www.census.gov/data/tables/time-series/dec/apportionment-data-text.html" rel="noopener noreferrer">historical apportionment data, {{ firstYear }} to {{ lastYear }}</a>. For the history, Wikipedia has good articles on <a href="https://en.wikipedia.org/wiki/United_States_congressional_apportionment" rel="noopener noreferrer">congressional apportionment</a>, the <a href="https://en.wikipedia.org/wiki/Apportionment_Act_of_1911" rel="noopener noreferrer">Apportionment Act of 1911</a>, the <a href="https://en.wikipedia.org/wiki/Reapportionment_Act_of_1929" rel="noopener noreferrer">Reapportionment Act of 1929</a> and <a href="https://en.wikipedia.org/wiki/Wesberry_v._Sanders" rel="noopener noreferrer">Wesberry v. Sanders</a>.</p>
+      <p>On the map, the House view adds up every district's votes county by county. This page is the other half of that picture: how many people each of those seats stands for.</p>
+    </section>
+
+    <p class="va-cta"><a class="va-button" href="/?office=house">Open the House map</a></p>
+  </article>
+</div>
+
+@include('article-style')
+<style>
+.vr-stats {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 28px 0 8px;
+}
+
+.vr-stats > div {
+  padding: 18px 18px 16px;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 16px;
+}
+
+.va-article p.vr-stat {
+  margin: 0;
+  color: #f4f6fb;
+  font-weight: 700;
+  font-size: clamp(26px, 4.4vw, 38px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.va-article p.vr-stat.is-accent {
+  color: #8ab4ff;
+}
+
+.va-article p.vr-stat-label {
+  margin: 8px 0 0;
+  color: #9aa6b8;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.vr-timeline {
+  display: grid;
+  gap: 0;
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.vr-timeline li {
+  display: grid;
+  gap: 4px 24px;
+  grid-template-columns: 150px 1fr;
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.vr-timeline b {
+  color: #8ab4ff;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.vr-timeline h3 {
+  margin: 0 0 4px;
+  font-weight: 650;
+  font-size: 16px;
+}
+
+.va-article .vr-timeline p {
+  margin: 0;
+}
+
+.vr-chart {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.vr-bar-row {
+  display: grid;
+  gap: 4px 12px;
+  grid-template-columns: 44px minmax(0, 1fr) 76px 190px;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.vr-bar-year {
+  color: #9aa6b8;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.vr-bar-track {
+  height: 14px;
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 999px;
+}
+
+.vr-bar-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #8ab4ff);
+  border-radius: 999px;
+}
+
+.vr-bar-value {
+  font-weight: 650;
+  font-size: 14.5px;
+  text-align: right;
+}
+
+.vr-bar-note {
+  color: #8693a6;
+  font-size: 13px;
+}
+
+.vr-sort {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 22px 0 10px;
+  color: #9aa6b8;
+  font-size: 13.5px;
+}
+
+.vr-sort span {
+  margin-right: 4px;
+}
+
+.vr-sort button {
+  min-height: 36px;
+  padding: 6px 13px;
+  color: #c6cedb;
+  font: inherit;
+  font-weight: 550;
+  background: transparent;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.vr-sort button:hover {
+  border-color: rgba(148, 163, 184, 0.45);
+}
+
+.vr-sort button.is-on {
+  color: #0b0f17;
+  background: #e9edf5;
+  border-color: #e9edf5;
+}
+
+.vr-table-wrap {
+  overflow-x: auto;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+}
+
+.vr-table {
+  width: 100%;
+  font-size: 14.5px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.vr-table th,
+.vr-table td {
+  padding: 9px 12px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.vr-table tbody tr:last-child th,
+.vr-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.vr-table thead th {
+  position: sticky;
+  top: 0;
+  color: #9aa6b8;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: normal;
+  vertical-align: bottom;
+  background: #111827;
+}
+
+.vr-table tbody th {
+  font-weight: 550;
+}
+
+.va-article .vr-table a {
+  color: #e9edf5;
+  text-decoration-color: rgba(148, 163, 184, 0.4);
+}
+
+.vr-table .is-num {
+  text-align: right;
+}
+
+.vr-table tbody tr:hover {
+  background: rgba(148, 163, 184, 0.06);
+}
+
+/* The figure, with a bar under it as long as the state's seat is large. */
+.vr-per {
+  position: relative;
+  min-width: 130px;
+}
+
+.vr-per span {
+  position: relative;
+  font-weight: 650;
+}
+
+.vr-per i {
+  position: absolute;
+  right: 12px;
+  bottom: 4px;
+  height: 3px;
+  max-width: calc(100% - 24px);
+  background: #5b9dff;
+  border-radius: 999px;
+  opacity: 0.75;
+}
+
+.vr-table .is-over {
+  color: #ffb4ad;
+}
+
+.vr-table .is-under {
+  color: #a9c7ff;
+}
+
+.vr-table small {
+  display: inline-block;
+  min-width: 34px;
+  margin-left: 6px;
+  color: #8693a6;
+  font-size: 12px;
+  text-align: left;
+}
+
+.va-article p.vr-foot {
+  margin-top: 12px;
+  color: #8693a6;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+@media (max-width: 760px) {
+  .vr-stats {
+    gap: 8px;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .vr-stats > div {
+    padding: 14px 14px 12px;
+  }
+
+  .vr-stats > div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .vr-timeline li {
+    grid-template-columns: 1fr;
+  }
+
+  .vr-bar-row {
+    grid-template-columns: 40px minmax(0, 1fr) 70px;
+  }
+
+  .vr-bar-note {
+    display: none;
+  }
+
+  /* A phone has room for the present: the 1910 columns are for a wider screen. */
+  .vr-wide {
+    display: none;
+  }
+
+  .vr-table th,
+  .vr-table td {
+    padding: 10px 8px;
+  }
+
+  .vr-table {
+    font-size: 14px;
+  }
+
+  .vr-per {
+    min-width: 0;
+  }
+
+  .vr-sort button {
+    min-height: 40px;
+  }
+}
+</style>
+@endsection
