@@ -5,6 +5,7 @@
     "": {
       "name": "stacks",
       "dependencies": {
+        "@bughq/sdk": "^0.3.0",
         "@stacksjs/actions": "^0.75.571",
         "@stacksjs/env": "^0.75.571",
         "@stacksjs/path": "^0.75.571",

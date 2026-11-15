@@ -85,3 +85,16 @@ const pending = join(OUT, `2026.json.${process.pid}.tmp`)
 await Bun.write(pending, text)
 await rename(pending, join(OUT, '2026.json'))
 console.error(`[data:results] 2026.json ${Math.round(text.length / 1024)} KB`)
+
+// Where the scheduled refresh runs, tell the uptime monitor it finished. The
+// monitor expects to hear every six hours and raises an incident when it does
+// not, which is how a refresh that has quietly stopped gets noticed.
+const heartbeat = process.env.RESULTS_HEARTBEAT_URL
+if (heartbeat) {
+  try {
+    await fetch(heartbeat, { method: 'POST', signal: AbortSignal.timeout(10_000) })
+  }
+  catch (error) {
+    console.error(`[data:results] heartbeat not delivered: ${(error as Error).message}`)
+  }
+}

@@ -12,16 +12,20 @@ import process from 'node:process'
  */
 const FOR_GOOD = 'public, max-age=31536000, immutable'
 
+const ANALYTICS = (process.env.ANALYTICSHQ_URL || 'https://analyticshq.org').replace(/\/+$/, '')
+const ERRORS = (process.env.BUGHQ_HOST || 'https://bughq.org').replace(/\/+$/, '')
+
 const CONTENT_SECURITY_POLICY = [
   'default-src \'self\'',
   // stx compiles a template's `:if` and `:class` expressions in the browser,
   // which is `unsafe-eval`, and ships each page's own script inline. What
   // this still refuses is script from anywhere but this site.
-  'script-src \'self\' \'unsafe-inline\' \'unsafe-eval\'',
+  `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${ANALYTICS}`,
   'style-src \'self\' \'unsafe-inline\'',
   'img-src \'self\' data: blob:',
   'font-src \'self\' data:',
-  'connect-src \'self\'',
+  // Page views go to AnalyticsHQ and browser errors to BugHQ.
+  `connect-src 'self' ${ANALYTICS} ${ERRORS}`,
   'worker-src \'self\' blob:',
   'object-src \'none\'',
   'base-uri \'self\'',

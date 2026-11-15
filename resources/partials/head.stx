@@ -29,6 +29,19 @@ const canonicalUrl = siteUrl ? `${siteUrl}${headPath}` : ''
 const preloadMap = typeof mapPage !== 'undefined' && !!mapPage
 const mapFiles = preloadMap ? dataFiles() : null
 const hidden = typeof noindex !== 'undefined' && !!noindex
+
+// Telemetry, only where the site is deployed. The AnalyticsHQ site id and the
+// BugHQ ingest key are both public by design: one names the site a page view
+// is for, the other lets a browser submit an error and nothing more.
+const live = config.app.env === 'production'
+const analyticsSite = live ? String(config.services?.analyticshq?.project || '') : ''
+const analyticsScript = `${String(config.services?.analyticshq?.url || 'https://analyticshq.org').replace(/\/+$/, '')}/script.js`
+const attribute = (value) => String(value).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
+const analyticsTag = analyticsSite
+  ? `<${'script'} src="${attribute(analyticsScript)}" defer data-site="${attribute(analyticsSite)}"></${'script'}>`
+  : ''
+const bugKey = live ? String(config.services?.bughq?.key || '') : ''
+const bugHost = String(config.services?.bughq?.url || 'https://bughq.org')
 </script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -40,6 +53,14 @@ const hidden = typeof noindex !== 'undefined' && !!noindex
 @if(hidden)
   <meta name="robots" content="noindex">
 @endif
+@if(bugKey)
+  <meta name="bughq-key" content="{{ bugKey }}">
+  <meta name="bughq-host" content="{{ bugHost }}">
+  <meta name="app-environment" content="{{ config.app.env }}">
+@endif
+{{-- Written as text: stx takes a script tag it finds in a template as the
+  template's own, moves it, and leaves its attributes unread. --}}
+{!! analyticsTag !!}
 @if(preloadMap)
   <link rel="stylesheet" href="{{ MAP_CSS }}" data-ts-maps-css="1">
   <link rel="modulepreload" href="{{ MAP_JS }}">
