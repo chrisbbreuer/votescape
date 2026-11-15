@@ -75,9 +75,6 @@ export const tsCloud: TsCloudConfig = {
         provider: 'porkbun',
         // Only the web hosts go through the proxy. A mail host must never.
         proxied: [APP_DOMAIN, `www.${APP_DOMAIN}`],
-        // The first deploy reports what it would copy and changes nothing.
-        // Read that report, then delete this line to make the move.
-        dryRun: true,
       },
 
       // `strict` because the box holds a real certificate. A new Cloudflare
