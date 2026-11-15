@@ -15,6 +15,7 @@ declare global {
   const isDark: typeof autoImports.isDark
   const preferredDark: typeof autoImports.preferredDark
   const toggleDark: typeof autoImports.toggleDark
+  const officeData: typeof autoImports.officeData
   const joinResults: typeof autoImports.joinResults
   const colorExpression: typeof autoImports.colorExpression
   const heightExpression: typeof autoImports.heightExpression
@@ -29,10 +30,17 @@ declare global {
   const formatMargin: typeof autoImports.formatMargin
   const flagNotes: typeof autoImports.flagNotes
   const escapeHtml: typeof autoImports.escapeHtml
+  const parseView: typeof autoImports.parseView
+  const viewQuery: typeof autoImports.viewQuery
+  const fromTrackpad: typeof autoImports.fromTrackpad
   const OFFICE_KEYS: typeof autoImports.OFFICE_KEYS
   const OFFICE_LABELS: typeof autoImports.OFFICE_LABELS
   const MARGIN_STOPS: typeof autoImports.MARGIN_STOPS
   const NEUTRAL_COLOR: typeof autoImports.NEUTRAL_COLOR
+  const officeFromLabel: typeof autoImports.officeFromLabel
+  const articleTitle: typeof autoImports.articleTitle
+  const articleUrl: typeof autoImports.articleUrl
+  const raceInfo: typeof autoImports.raceInfo
   const countrySummary: typeof autoImports.countrySummary
   const stateSummary: typeof autoImports.stateSummary
 }
