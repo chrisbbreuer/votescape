@@ -97,6 +97,7 @@
     "mapshaper": "^0.7.101"
   },
   "overrides": {
+    "@stacksjs/ts-cloud": "^0.16.139",
     "ts-images": "https://registry.pantry.dev/ts-images@22073a9",
     "@stacksjs/ts-svg": "https://registry.pantry.dev/@stacksjs/ts-svg@367a010"
   }
