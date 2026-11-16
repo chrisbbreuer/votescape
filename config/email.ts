@@ -4,19 +4,22 @@ import { env } from '@stacksjs/env'
 export default {
   from: {
     name: env.MAIL_FROM_NAME || 'Votescape',
-    address: env.MAIL_FROM_ADDRESS || 'hello@example.com',
+    address: env.MAIL_FROM_ADDRESS || 'hello@votescape.org',
   },
 
-  domain: env.MAIL_DOMAIN || env.APP_DOMAIN || 'example.com',
-  mailboxes: [],
+  domain: env.MAIL_DOMAIN || 'votescape.org',
+  // The address the site writes from. The deploy creates it on the mail
+  // server and keeps its password, encrypted, as MAIL_PASSWORD_HELLO.
+  mailboxes: ['hello'],
   forwards: {},
   url: env.APP_URL || 'votescape.localhost',
   charset: 'UTF-8',
 
   server: {
-    // Explicit opt-in: a generated application must never reconcile the
-    // framework repository's shared mail server or mailboxes.
-    enabled: false,
+    // Votescape's own mail: the deploy registers votescape.org on the mail
+    // server, signs what it sends, and publishes MX, SPF, DKIM and DMARC.
+    enabled: true,
+    generatePasswords: true,
     scan: true,
     subdomain: 'mail',
     // Gmail Postmaster Tools shows how Gmail receives your mail. Add your
