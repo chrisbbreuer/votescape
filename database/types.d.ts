@@ -240,13 +240,6 @@ declare module '@stacksjs/database' {
       end_date: string
       team_id: number
     }
-    card_assignees: {
-      // columns
-      card_id: number
-      user_id: number
-      assigned_by_user_id: number | null
-      created_at: string | null
-    }
     card_attachments: {
       // columns
       id: number
@@ -268,12 +261,6 @@ declare module '@stacksjs/database' {
       card_id: number
       user_id: number
       body: string
-    }
-    card_labels: {
-      // columns
-      card_id: number
-      label_id: number
-      created_at: string | null
     }
     cards: {
       // columns
@@ -372,47 +359,6 @@ declare module '@stacksjs/database' {
       is_active: number
       categorizable_id: number
       categorizable_type: string
-    }
-    ci_run_states: {
-      // columns
-      repo_full_name: string
-      last_conclusion: string | null
-      last_run_id: number | null
-      last_seen_at: string | null
-      last_notified_at: string | null
-      updated_at: string | null
-    }
-    ci_runner_alert_states: {
-      // columns
-      org: string
-      alerting: number
-      last_alerted_at: string | null
-      last_cleared_at: string | null
-      updated_at: string | null
-    }
-    ci_runner_samples: {
-      // columns
-      id: number
-      org: string
-      running: number
-      queued: number
-      cap: number
-      sampled_at: string
-    }
-    commentables: {
-      // columns
-      id: number
-      title: string
-      body: string
-      status: string
-      approved_at: number | null
-      rejected_at: number | null
-      commentables_id: number
-      commentables_type: string
-      user_id: number | null
-      is_active: number | null
-      created_at: string
-      updated_at: string | null
     }
     comments: {
       // columns
@@ -533,20 +479,6 @@ declare module '@stacksjs/database' {
       status: "Active" | "Inactive"
       avatar: string
       user_id: number
-    }
-    dead_letter_jobs: {
-      // columns
-      id: number
-      uuid: string
-      connection: string
-      queue: string
-      payload: string
-      exception: string
-      reason: string
-      total_failures: number
-      first_failed_at: string | null
-      last_failed_at: string | null
-      dead_lettered_at: string
     }
     delivery_routes: {
       // columns
@@ -797,39 +729,6 @@ declare module '@stacksjs/database' {
       last_used_date: string
       template_id: string
       customer_id: number
-    }
-    job_batches: {
-      // columns
-      id: string
-      name: string
-      total_jobs: number
-      pending_jobs: number
-      failed_jobs: number
-      failed_job_ids: string
-      options: string | null
-      cancelled_at: string | null
-      created_at: string
-      finished_at: string | null
-      then_handler: string | null
-      catch_handler: string | null
-      finally_handler: string | null
-    }
-    job_idempotency: {
-      // columns
-      id: number
-      idempotency_key: string
-      job_name: string
-      queue: string
-      dispatched_at: string
-    }
-    job_quarantine: {
-      // columns
-      id: number
-      job_name: string
-      payload_hash: string
-      failure_count: number
-      window_start: string
-      quarantined_at: string | null
     }
     jobs: {
       // columns
@@ -1223,15 +1122,6 @@ declare module '@stacksjs/database' {
       order_id: number
       customer_id: number
     }
-    permissions: {
-      // columns
-      id: number
-      name: string
-      guard_name: string
-      description: string | null
-      created_at: string | null
-      updated_at: string | null
-    }
     pledges: {
       // columns
       id: number
@@ -1358,15 +1248,6 @@ declare module '@stacksjs/database' {
       explain_plan: string
       optimization_suggestions: string
     }
-    queue_circuit_state: {
-      // columns
-      queue_name: string
-      success_count: number
-      failure_count: number
-      window_start: string
-      paused_at: string | null
-      resume_at: string | null
-    }
     queue_workers: {
       // columns
       worker_id: string
@@ -1466,21 +1347,6 @@ declare module '@stacksjs/database' {
       product_id: number
       customer_id: number
       order_id: number
-    }
-    role_permissions: {
-      // columns
-      role_id: number
-      permission_id: number
-      created_at: string | null
-    }
-    roles: {
-      // columns
-      id: number
-      name: string
-      guard_name: string
-      description: string | null
-      created_at: string | null
-      updated_at: string | null
     }
     sender_domains: {
       // columns
@@ -1670,18 +1536,6 @@ declare module '@stacksjs/database' {
       created_at: string
       updated_at: string | null
     }
-    taggables: {
-      // columns
-      id: number
-      name: string
-      slug: string
-      description: string | null
-      is_active: number
-      taggable_id: number | null
-      taggable_type: string
-      created_at: string
-      updated_at: string | null
-    }
     tags: {
       // columns
       id: number
@@ -1778,18 +1632,6 @@ declare module '@stacksjs/database' {
       metadata: unknown
       occurred_at: string
       team_id: number
-    }
-    user_permissions: {
-      // columns
-      user_id: number
-      permission_id: number
-      created_at: string | null
-    }
-    user_roles: {
-      // columns
-      user_id: number
-      role_id: number
-      created_at: string | null
     }
     users: {
       // columns
