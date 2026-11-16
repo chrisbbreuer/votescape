@@ -305,6 +305,8 @@ function sortBy(next: string): void {
       <p>On the map, the House view adds up every district's votes county by county. This page is the other half of that picture: how many people each of those seats stands for.</p>
     </section>
 
+    <Subscribe />
+
     <p class="va-cta"><a class="va-button" href="/?office=house">Open the House map</a></p>
   </article>
 </div>

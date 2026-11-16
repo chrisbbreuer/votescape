@@ -105,6 +105,8 @@ const canonicalPath = '/about'
       <p>The House has had 435 seats since 1911, while the country has more than tripled. <a href="/representation">The history of the 435, and the people behind each seat in every state</a>, is a page of its own.</p>
     </section>
 
+    <Subscribe />
+
     <p class="va-cta"><a class="va-button" href="/">Open the map</a></p>
   </article>
 </div>

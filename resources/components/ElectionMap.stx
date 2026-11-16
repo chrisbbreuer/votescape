@@ -423,7 +423,7 @@ onDestroy(() => {
         <li><a href="/state/{{ link.code }}" class="{{ link.code === focus ? 'is-here' : '' }}">{{ link.name }}</a></li>
       @endforeach
     </ul>
-    <p class="vs-states-foot"><a href="/about">About the map</a><a href="/representation">How many people a seat stands for</a></p>
+    <p class="vs-states-foot"><a href="/about">About the map</a><a href="/representation">How many people a seat stands for</a><a href="/about#updates">Get updates by email</a></p>
   </nav>
 
   {{-- A link to this view, and the places it can be posted. --}}

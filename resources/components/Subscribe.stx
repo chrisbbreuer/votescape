@@ -1,0 +1,100 @@
+{{-- A place to leave an email address, for word of new results and new
+  elections. It is CommsHQ's own signup form: the address goes straight to
+  CommsHQ, which writes to it once asking for confirmation and to nobody who
+  does not confirm. Votescape itself keeps nothing.
+
+  The form's address is NEWSLETTER_FORM_URL, which `buddy hq:connect commshq`
+  leads to. Where it is not set, nothing is drawn.
+
+  A plain form on purpose: it works with scripts off, and what answers is
+  CommsHQ's page saying to check the inbox. --}}
+<script server>
+export const formUrl = String(process.env.NEWSLETTER_FORM_URL || '')
+export const heading = String($props.heading || 'Hear when the map changes')
+</script>
+
+@if(formUrl)
+  <section id="updates" class="vsub" aria-labelledby="vsub-title">
+    <h2 id="vsub-title">{{ heading }}</h2>
+    <p>One short email when new results are in or another election is added. Nothing else, and one click to stop.</p>
+    <form class="vsub-form" action="{{ formUrl }}" method="POST">
+      <label class="sr-only" for="vsub-email">Email address</label>
+      <input id="vsub-email" name="email" type="email" required autocomplete="email" inputmode="email" enterkeyhint="send" placeholder="you@example.com">
+      <button type="submit">Keep me posted</button>
+    </form>
+    <p class="vsub-small">You will get one email asking you to confirm. Without that click, you hear nothing more.</p>
+  </section>
+@endif
+
+<style>
+.vsub {
+  margin: 40px 0 28px;
+  padding: 22px 22px 20px;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 16px;
+}
+
+.va-article .vsub h2 {
+  margin-bottom: 6px;
+}
+
+.vsub-form {
+  display: flex;
+  gap: 8px;
+  max-width: 460px;
+  margin-top: 14px;
+}
+
+.vsub-form input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 14px;
+  color: #e9edf5;
+  font: inherit;
+  background: #0b0f17;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 12px;
+}
+
+.vsub-form input::placeholder {
+  color: #6b7789;
+}
+
+.vsub-form input:focus-visible {
+  border-color: #8ab4ff;
+  outline: 2px solid #8ab4ff;
+  outline-offset: 1px;
+}
+
+.vsub-form button {
+  min-height: 44px;
+  padding: 10px 18px;
+  color: #0b0f17;
+  font: inherit;
+  font-weight: 650;
+  white-space: nowrap;
+  background: #f1f4f9;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.vsub-form button:hover {
+  background: #fff;
+}
+
+.va-article p.vsub-small {
+  margin: 10px 0 0;
+  color: #8693a6;
+  font-size: 13px;
+}
+
+@media (max-width: 520px) {
+  .vsub-form {
+    flex-direction: column;
+  }
+}
+</style>

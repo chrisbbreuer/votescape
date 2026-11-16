@@ -17,6 +17,7 @@ const ERRORS = (process.env.BUGHQ_HOST || 'https://bughq.org').replace(/\/+$/, '
 // Cloudflare, which the site is served through, adds its Web Analytics beacon
 // to every page at the edge. It is allowed by name: the script and where it
 // reports, and nothing else of Cloudflare's.
+const SIGNUPS = (process.env.COMMSHQ_URL || 'https://commshq.org').replace(/\/+$/, '')
 const EDGE_SCRIPT = 'https://static.cloudflareinsights.com'
 const EDGE_BEACON = 'https://cloudflareinsights.com'
 
@@ -35,7 +36,8 @@ const CONTENT_SECURITY_POLICY = [
   'worker-src \'self\' blob:',
   'object-src \'none\'',
   'base-uri \'self\'',
-  'form-action \'self\'',
+  // The signup form on the prose pages posts to CommsHQ, which keeps the list.
+  `form-action 'self' ${SIGNUPS}`,
   'frame-ancestors \'self\'',
 ].join('; ')
 
