@@ -14,18 +14,24 @@ const FOR_GOOD = 'public, max-age=31536000, immutable'
 
 const ANALYTICS = (process.env.ANALYTICSHQ_URL || 'https://analyticshq.org').replace(/\/+$/, '')
 const ERRORS = (process.env.BUGHQ_HOST || 'https://bughq.org').replace(/\/+$/, '')
+// Cloudflare, which the site is served through, adds its Web Analytics beacon
+// to every page at the edge. It is allowed by name: the script and where it
+// reports, and nothing else of Cloudflare's.
+const EDGE_SCRIPT = 'https://static.cloudflareinsights.com'
+const EDGE_BEACON = 'https://cloudflareinsights.com'
 
 const CONTENT_SECURITY_POLICY = [
   'default-src \'self\'',
   // stx compiles a template's `:if` and `:class` expressions in the browser,
   // which is `unsafe-eval`, and ships each page's own script inline. What
   // this still refuses is script from anywhere but this site.
-  `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${ANALYTICS}`,
+  `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${ANALYTICS} ${EDGE_SCRIPT}`,
   'style-src \'self\' \'unsafe-inline\'',
   'img-src \'self\' data: blob:',
   'font-src \'self\' data:',
-  // Page views go to AnalyticsHQ and browser errors to BugHQ.
-  `connect-src 'self' ${ANALYTICS} ${ERRORS}`,
+  // Page views go to AnalyticsHQ and browser errors to BugHQ. Cloudflare's
+  // beacon reports the page's load timings to Cloudflare.
+  `connect-src 'self' ${ANALYTICS} ${ERRORS} ${EDGE_BEACON}`,
   'worker-src \'self\' blob:',
   'object-src \'none\'',
   'base-uri \'self\'',
