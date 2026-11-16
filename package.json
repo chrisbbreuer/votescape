@@ -66,11 +66,11 @@
   },
   "dependencies": {
     "@bughq/sdk": "^0.3.0",
-    "@stacksjs/actions": "^0.75.615",
-    "@stacksjs/env": "^0.75.615",
-    "@stacksjs/path": "^0.75.615",
+    "@stacksjs/actions": "^0.75.616",
+    "@stacksjs/env": "^0.75.616",
+    "@stacksjs/path": "^0.75.616",
     "@stacksjs/stx": "0.2.864",
-    "stacks": "^0.75.615",
+    "stacks": "^0.75.616",
     "ts-maps": "^0.5.10"
   },
   "workspaces": [
