@@ -1,6 +1,7 @@
 import type { Candidate, Contest, UnitCount } from '../../scripts/sources/types'
 import { describe, expect, test } from 'bun:test'
 import { comparable, oneEach, countyId, countyUnits, FLAG, rollup, rollupOffice, sides } from '../../scripts/lib/rollup'
+import { contestFrom, keep } from '../../scripts/sources/nyt'
 
 // Small made-up contests. The numbers are chosen to be easy to add up, not to
 // resemble any real count.
@@ -193,6 +194,38 @@ describe('rolling an office up', () => {
     expect(flags).toBe(FLAG.standIn | FLAG.firstRound | FLAG.undecided)
     expect(states['02']).toMatchObject({ demParty: 'Independent', demName: 'Other ind', status: 'uncalled' })
     expect(states['02']!.winner).toBeUndefined()
+  })
+
+  test('ranked-choice statewide and district counts use the same first round', () => {
+    const ref = { id: 'AK-test', state: 'AK', office: 'house', district: '0', special: false, slug: 'results-alaska-test' } as const
+    const candidateVotes = (a: number, b: number, c: number) => [
+      { nyt_id: 'a', nyt_candidate_race_id: 1, votes: { total: a } },
+      { nyt_id: 'b', nyt_candidate_race_id: 2, votes: { total: b } },
+      { nyt_id: 'c', nyt_candidate_race_id: 3, votes: { total: c } },
+    ]
+    const race = contestFrom(ref, keep({
+      nyt_id: ref.id,
+      tabulation_method: 'ranked-choice',
+      race_call_status: 'called',
+      outcome: { won: ['b'] },
+      candidate_metadata: {
+        a: { nyt_candidate_race_id: 1, party: { nyt_id: 'DEM', name: 'Democrat' } },
+        b: { nyt_candidate_race_id: 2, party: { nyt_id: 'GOP', name: 'Republican' } },
+        c: { nyt_candidate_race_id: 3 },
+      },
+      rounds: [
+        { round_type: 'initial', total_votes: 2000, candidates: [{ nyt_candidate_race_id: 3, total: 280 }, { nyt_candidate_race_id: 1, total: 880 }, { nyt_candidate_race_id: 2, total: 840 }] },
+        { round_type: 'final', total_votes: 1830, candidates: [{ nyt_candidate_race_id: 1, total: 900 }, { nyt_candidate_race_id: 2, total: 930 }] },
+      ],
+      reporting_units: [
+        { name: 'Alaska', level: 'state', fips_state: '02', total_votes: 1830, candidates: candidateVotes(900, 930, 0) },
+        { name: 'State House District 8', level: 'state_house_district', fips_state: '02', fips_suffix: '008', total_votes: 1990, candidates: candidateVotes(880, 840, 270) },
+      ],
+    }))
+    const { counties, states, problems } = rollupOffice([race], TOWNS, KNOWN)
+    expect(problems).toEqual([])
+    expect(states['02']).toMatchObject({ dem: 880, rep: 840, total: 2000, seats: { dem: 0, rep: 1 } })
+    expect(counties['02HD08']?.slice(0, 3)).toEqual([880, 840, 1990])
   })
 
   test('a county that is not on the map, or counties that do not add up, are problems', () => {

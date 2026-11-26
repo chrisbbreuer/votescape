@@ -37,6 +37,12 @@ const SUMMARIES: Record<Office, string> = {
   governor: 'results-governor',
 }
 
+interface VoteRound {
+  round_type: string
+  total_votes: number | null
+  candidates: Array<{ nyt_candidate_race_id: number, total: number | null }>
+}
+
 /** The fields of a race kept from a file; the rest is the page's furniture. */
 export interface KeptRace {
   nyt_id: string
@@ -50,6 +56,7 @@ export interface KeptRace {
   updated_at: string
   url: string | null
   outcome: { won?: string[], advanced_to_runoff?: string[] } | null
+  firstRound?: { total: number, votes: Record<string, number> } | null
   candidate_metadata: Record<string, { first_name: string | null, last_name: string | null, incumbent: boolean, party: { nyt_id: string, name: string } | null }>
   reporting_units: Array<{
     name: string
@@ -64,8 +71,15 @@ export interface KeptRace {
 }
 
 export function keep(race: any): KeptRace {
+  const rankedChoice = race.tabulation_method === 'ranked-choice'
+  const rounds: VoteRound[] | undefined = race.rounds
+  const initial = rankedChoice ? rounds?.find(round => round.round_type === 'initial') : undefined
+  const roundVotes = new Map(initial?.candidates.map(candidate => [candidate.nyt_candidate_race_id, candidate.total]))
+  const firstChoices: Record<string, number> = {}
   const metadata: KeptRace['candidate_metadata'] = {}
   for (const [id, c] of Object.entries<any>(race.candidate_metadata ?? {})) {
+    if (initial)
+      firstChoices[id] = roundVotes.get(c.nyt_candidate_race_id) ?? 0
     metadata[id] = {
       first_name: c.first_name ?? null,
       last_name: c.last_name ?? null,
@@ -84,6 +98,7 @@ export function keep(race: any): KeptRace {
     updated_at: race.updated_at,
     url: race.url ?? null,
     outcome: race.outcome ? { won: race.outcome.won ?? [], advanced_to_runoff: race.outcome.advanced_to_runoff ?? [] } : null,
+    ...(rankedChoice ? { firstRound: initial?.total_votes != null ? { total: initial.total_votes, votes: firstChoices } : null } : {}),
     candidate_metadata: metadata,
     reporting_units: (race.reporting_units ?? []).map((u: any) => ({
       name: u.name,
@@ -116,15 +131,22 @@ export async function fetchJson(url: string): Promise<any> {
  * What `cut` keeps of the file at `url`, from `storage/data/results/<folder>`
  * or fetched into it.
  */
-export async function cached<T>(folder: string, name: string, url: string, refresh: boolean, cut: (file: any) => T): Promise<T> {
+export async function cached<T>(folder: string, name: string, url: string, refresh: boolean, cut: (file: any) => T, isCurrent?: (value: T) => boolean): Promise<T> {
   const path = join(STORE, folder, `${name}.json`)
-  if (!refresh && existsSync(path))
-    return Bun.file(path).json()
+  if (!refresh && existsSync(path)) {
+    const kept: T = await Bun.file(path).json()
+    if (!isCurrent || isCurrent(kept))
+      return kept
+  }
   const kept = cut(await fetchJson(url))
   await mkdir(join(STORE, folder), { recursive: true })
   await Bun.write(path, JSON.stringify(kept))
   return kept
 }
+
+// A ranked-choice cache from before first rounds were kept can contain a final statewide count.
+const hasFirstRounds = (races: KeptRace[]): boolean =>
+  races.every(race => race.tabulation_method !== 'ranked-choice' || race.firstRound !== undefined)
 
 const PARTIES: Record<string, Party> = { DEM: 'D', GOP: 'R' }
 
@@ -147,9 +169,15 @@ export function contestFrom(ref: ContestRef, race: KeptRace): Contest {
 
   const units: UnitCount[] = race.reporting_units.map((u) => {
     const level = LEVELS[u.level] ?? 'other'
-    const votes: Record<string, number> = {}
+    // The headline statewide count moves to the final round while districts still
+    // report first choices. Keep the numbers on the same round across the map.
+    const firstRound = level === 'state' ? race.firstRound : null
+    if (firstRound && Object.values(firstRound.votes).reduce((sum, count) => sum + count, 0) !== firstRound.total)
+      throw new Error(`[nyt] ${ref.slug}: first-round candidate votes do not add up to the statewide count`)
+
+    const reportedVotes: Record<string, number> = {}
     for (const c of u.candidates)
-      votes[c.nyt_id] = c.votes.total ?? 0
+      reportedVotes[c.nyt_id] = c.votes.total ?? 0
     return {
       level,
       stateFips: u.fips_state ?? '',
@@ -157,8 +185,8 @@ export function contestFrom(ref: ContestRef, race: KeptRace): Contest {
       // `008` for State House District 8.
       ...(level === 'district' && u.fips_suffix ? { district: String(Number(u.fips_suffix)) } : {}),
       name: u.name,
-      votes,
-      total: u.total_votes ?? 0,
+      votes: firstRound?.votes ?? reportedVotes,
+      total: firstRound?.total ?? u.total_votes ?? 0,
       pctReporting: u.eevp,
     }
   })
@@ -258,7 +286,7 @@ function pageOf(office: Office, race: KeptRace): string | null {
 export function nytPages(election: string, offices: Office[], folder: string): ResultsSource {
   const base = `https://static01.nyt.com/elections-assets/pages/data/${election}`
   const races = (slug: string, refresh: boolean): Promise<KeptRace[]> =>
-    cached(folder, slug, `${base}/${slug}.json`, refresh, file => (file.races ?? []).map(keep))
+    cached(folder, slug, `${base}/${slug}.json`, refresh, file => (file.races ?? []).map(keep), hasFirstRounds)
 
   return {
     id: 'nyt',
@@ -306,7 +334,7 @@ export function nytStates(election: string, states: Array<{ code: string, name: 
   // and a runoff only where no one has a majority.
   const wanted = (race: any): boolean => race.office in OFFICES_2022 && /general|open primary/i.test(race.type ?? '') && !/runoff/i.test(race.type ?? '')
   const races = (slug: string, refresh: boolean): Promise<KeptRace[]> =>
-    cached(folder, slug, `${base}/${slug}.json`, refresh, file => (file.races ?? []).filter(wanted).map(keep))
+    cached(folder, slug, `${base}/${slug}.json`, refresh, file => (file.races ?? []).filter(wanted).map(keep), hasFirstRounds)
 
   return {
     id: 'nyt',
@@ -344,7 +372,7 @@ export function nytStates(election: string, states: Array<{ code: string, name: 
       // in the file behind the seat's own page.
       if (!byCounty(race) && race.url) {
         const own = basename(race.url, '.html')
-        const page = await cached<KeptRace[]>(folder, own, `${base}/${own}.json`, refresh, file => (file.races ?? []).map(keep))
+        const page = await cached(folder, own, `${base}/${own}.json`, refresh, file => (file.races ?? []).map(keep), hasFirstRounds)
         race = page.find(r => r.nyt_id === ref.id) ?? race
       }
       const contest = contestFrom(ref, race)

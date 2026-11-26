@@ -18,7 +18,8 @@ export default {
   author: '',
   contributors: [],
   defaultLanguage: 'en',
-  releaseable: true,
+  // Votescape releases the web app. The scaffold libraries are for local builds.
+  releaseable: false,
 
   /**
    * One `resources/` tree, any number of npm packages.
