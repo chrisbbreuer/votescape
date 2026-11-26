@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "stacks",
+      "name": "votescape",
       "dependencies": {
         "@bughq/sdk": "^0.3.0",
         "@stacksjs/actions": "^0.75.628",
